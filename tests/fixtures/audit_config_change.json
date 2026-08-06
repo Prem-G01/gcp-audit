@@ -1,0 +1,37 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudresourcemanager.googleapis.com",
+    "methodName": "SetIamPolicy",
+    "resourceName": "projects/prj-dg-devops-test",
+    "authenticationInfo": {
+      "principalEmail": "frank@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.88",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "request": {
+      "policy": {
+        "auditConfigs": [
+          {
+            "service": "allServices",
+            "auditLogConfigs": [
+              {"logType": "DATA_READ"}
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "resource": {
+    "type": "project",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-05T12:25:00Z",
+  "insertId": "fixture-audit-config-006",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

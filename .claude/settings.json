@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(pip index *)",
+      "Bash(pip download *)",
+      "Bash(pip config *)",
+      "Bash(python -c \"import urllib.request; print\\(urllib.request.urlopen\\('https://pypi.org/simple/google-cloud-iam-credentials/', timeout=10\\).status\\)\")",
+      "WebSearch",
+      "Bash(python -c \"from google.cloud import iam_credentials_v1; print\\(iam_credentials_v1.IAMCredentialsClient\\)\")",
+      "Bash(set -e)",
+      "Bash(python -m py_compile main.py)",
+      "Bash(xargs -0 -n1 python -m py_compile)",
+      "Bash(mypy src *)",
+      "Bash(pytest -q)",
+      "Bash(python -m pytest -q)",
+      "Bash(python -c \"import functions_framework, cloudevents; print\\('functions_framework', functions_framework.__file__\\); print\\('cloudevents ok'\\)\")",
+      "Bash(sha256sum src/senders/gmail_sender.py src/email_template.py)",
+      "Bash(shasum -a 256 src/senders/gmail_sender.py src/email_template.py)",
+      "Bash(python -c ' *)",
+      "Bash(tee /tmp/frozen_hashes_before.txt)",
+      "Bash(python -c \"import google.cloud.asset_v1, google.cloud.bigquery, google.cloud.pubsub_v1, vertexai; print\\('all imports OK'\\)\")",
+      "Bash(pytest -q tests/test_gemini.py::test_analyze_timeout_returns_finding_unchanged -v)",
+      "Bash(tee /tmp/frozen_hashes_after.txt)",
+      "Bash(terraform fmt *)",
+      "Bash(xargs ls -la --time-style=full-iso)",
+      "Bash(awk '{print $6, $7, $NF}')",
+      "Bash(xargs wc -l)",
+      "Bash(gcloud auth *)"
+    ]
+  }
+}

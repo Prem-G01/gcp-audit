@@ -1,0 +1,295 @@
+# Declarative detection rules for the GCP audit alerting platform.
+#
+# Adding, disabling, or retuning a rule is a YAML-only change -- never touch
+# src/rules/engine.py to do it. The engine loads and validates this file at
+# Cloud Function cold start; a malformed rule fails loudly there, not at
+# match time.
+#
+# -----------------------------------------------------------------------------
+# SCHEMA
+# -----------------------------------------------------------------------------
+# version: 1                     (required, must be exactly 1)
+# defaults:                      (optional; applied to any rule that omits
+#                                 the same key)
+#   severity: MEDIUM
+#   ai_analysis: false
+#   enabled: true
+# rules:                         (required, non-empty list)
+#   - id: <unique string>                    required
+#     title: <string>                        required -- email subject line
+#     description: <string>                  optional, free text
+#     severity: CRITICAL|HIGH|MEDIUM|LOW|INFO  must be a key present in
+#                                               config/routing.yaml's
+#                                               severity_styles
+#     enabled: true|false                    optional, defaults.enabled
+#     ai_analysis: true|false                optional, defaults.ai_analysis
+#                                             -- Gemini only runs when this
+#                                             is true. Keep it true only for
+#                                             rules where a human judgment
+#                                             call ("is this legitimate?")
+#                                             adds real value -- it costs
+#                                             money per finding.
+#     console_url_template: <string, optional>
+#                                             {project_id} and {resource_name}
+#                                             are the ONLY placeholders
+#                                             allowed -- anything else fails
+#                                             validation at load time.
+#     match: <condition tree, required>      see below
+#     fields: {<label>: <dotted path>, ...}  what shows up in the email body
+#
+# -----------------------------------------------------------------------------
+# CONDITION TREE
+# -----------------------------------------------------------------------------
+# A condition is exactly one of:
+#   all_of: [<condition>, ...]     -- true iff every child is true
+#   any_of: [<condition>, ...]     -- true iff at least one child is true
+#   not: <condition>               -- negation
+#   { field: <dotted path>, op: <operator>, value: <literal or list> }
+#                                   -- a leaf condition (see operators below)
+#
+# `field` is a dotted path resolved against the enriched event. The first
+# segment is one of: method_name, principal_email, resource_name,
+# resource_type, project_id, severity, event_timestamp, raw_log_id,
+# request_metadata, asset_labels, asset_ancestors, enrichment_ok, raw.
+# Everything after the first segment walks into dicts (by key) and lists (by
+# numeric index) -- e.g. `raw.protoPayload.authenticationInfo.principalEmail`
+# or `request_metadata.caller_ip`. A path that doesn't resolve is a
+# NON-MATCH for every operator except `not_exists`.
+#
+# -----------------------------------------------------------------------------
+# OPERATORS (closed set -- exactly these eleven, nothing else, no eval/exec)
+# -----------------------------------------------------------------------------
+#   equals, not_equals   direct ==, with a NARROW type-coercion fallback for
+#                         numeric-string-vs-number and bool-vs-"true"/"false"
+#                         string only (never a blanket stringify -- so the
+#                         YAML string "None" will NOT match a real null).
+#   contains,             for a string value: substring check.
+#   not_contains          for a dict/list value: recursively searches VALUES
+#                         only (never dict keys), depth-capped, so a field
+#                         literally named "...allUsersReadOnly" will NOT
+#                         false-positive a `contains: allUsers` check on its
+#                         key -- only on an actual value somewhere inside.
+#                         NOTE: this is not correlation-aware -- it can't
+#                         express "the SAME list element has role X AND
+#                         member Y". For broad public-exposure detection
+#                         (allUsers anywhere in a policy diff) that's the
+#                         desired behaviour; for anything needing per-element
+#                         correlation, this operator set can't express it.
+#   starts_with, ends_with   string prefix/suffix, case-sensitive.
+#   in, not_in            value must be a YAML list; membership check (same
+#                         narrow coercion as equals).
+#   regex                 value must be a string; precompiled at load time
+#                         (a bad pattern fails cold start). Uses re.search
+#                         (UNANCHORED) -- always anchor allowlist-style
+#                         patterns with ^...$ or a substring match will let
+#                         "admin@company.com.evil.com" through an
+#                         "admin@company\.com" pattern. Matched text is
+#                         capped to 4096 chars before matching.
+#   exists, not_exists     no `value` key. True iff the dotted path
+#                         resolves (exists) / doesn't resolve (not_exists).
+#
+# All string comparisons are case-sensitive; use `regex` with an inline
+# `(?i)` flag for case-insensitive matching.
+
+version: 1
+
+defaults:
+  severity: MEDIUM
+  ai_analysis: false
+  enabled: true
+
+rules:
+  # 1. Any IAM policy binding change, anywhere (projects, folders, orgs,
+  #    buckets, service accounts, ...). Broad and cheap -- catches the raw
+  #    fact of a policy change; rules 5 and 6 below narrow in on the
+  #    specific dangerous shapes of a policy change.
+  - id: iam_policy_change
+    title: "IAM policy changed"
+    description: >
+      A SetIamPolicy call was made against some resource. Broad catch-all
+      for IAM binding changes across every GCP service.
+    severity: HIGH
+    ai_analysis: false
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      field: method_name
+      op: contains
+      value: "SetIamPolicy"
+    fields:
+      Principal: principal_email
+      Method: method_name
+      Resource: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+
+  # 2. Service account key creation -- long-lived credentials are a
+  #    perennial top exfiltration risk.
+  - id: service_account_key_created
+    title: "Service account key created"
+    description: >
+      A new (downloadable) service account key was created. Long-lived keys
+      are a standing credential-theft risk; prefer Workload Identity or
+      short-lived tokens.
+    severity: HIGH
+    ai_analysis: false
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      field: method_name
+      op: equals
+      value: "google.iam.admin.v1.CreateServiceAccountKey"
+    fields:
+      Principal: principal_email
+      Service Account: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+
+  # 3. Organization policy modification -- org policies are guardrails;
+  #    changing one often *removes* a guardrail rather than adding one.
+  - id: org_policy_modified
+    title: "Organization policy modified"
+    description: >
+      An org policy constraint was created, updated, or deleted. Org
+      policies are org-wide guardrails (e.g. disallow public IPs, restrict
+      resource locations) -- a change here can silently weaken every
+      project under it.
+    severity: HIGH
+    ai_analysis: true
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      field: method_name
+      op: contains
+      value: "OrgPolicy"
+    fields:
+      Principal: principal_email
+      Method: method_name
+      Resource: resource_name
+      Project: project_id
+
+  # 4. Firewall rule permitting the entire internet.
+  - id: firewall_open_to_internet
+    title: "Firewall rule permits 0.0.0.0/0"
+    description: >
+      A firewall rule was created or updated with a source range covering
+      the entire internet (0.0.0.0/0).
+    severity: CRITICAL
+    ai_analysis: false
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      all_of:
+        - field: method_name
+          op: in
+          value:
+            - "v1.compute.firewalls.insert"
+            - "v1.compute.firewalls.patch"
+            - "beta.compute.firewalls.insert"
+            - "beta.compute.firewalls.patch"
+        - field: raw.protoPayload.request
+          op: contains
+          value: "0.0.0.0/0"
+    fields:
+      Principal: principal_email
+      Method: method_name
+      Firewall Rule: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+
+  # 5. Public IAM/bucket grant -- allUsers or allAuthenticatedUsers added
+  #    to any policy. Intentionally broad: alerting on ANY occurrence,
+  #    regardless of the granted role, is the correct posture here (a
+  #    viewer-level public grant is still a public grant worth a look).
+  - id: public_iam_grant
+    title: "Public principal granted IAM access"
+    description: >
+      allUsers or allAuthenticatedUsers appears in an IAM policy diff --
+      typically means a bucket, object, or other resource just became
+      publicly accessible.
+    severity: CRITICAL
+    ai_analysis: true
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      all_of:
+        - field: method_name
+          op: contains
+          value: "SetIamPolicy"
+        - any_of:
+            - field: raw.protoPayload.request
+              op: contains
+              value: "allUsers"
+            - field: raw.protoPayload.request
+              op: contains
+              value: "allAuthenticatedUsers"
+            - field: raw.protoPayload.response
+              op: contains
+              value: "allUsers"
+            - field: raw.protoPayload.response
+              op: contains
+              value: "allAuthenticatedUsers"
+    fields:
+      Principal: principal_email
+      Resource: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+
+  # 6. Audit logging configuration changed -- often the first move to
+  #    reduce visibility before other changes.
+  - id: audit_config_changed
+    title: "Audit logging configuration changed"
+    description: >
+      A SetIamPolicy call modified the auditConfigs section of a policy --
+      i.e. someone changed which activities get Data Access logged. Often
+      used to reduce visibility ahead of other changes. Uses `exists` on the
+      precise nested path rather than `contains`, because "auditConfigs" is
+      the name of a KEY here, not a value -- and `contains` deliberately
+      only searches values (see the operator notes above), so `exists` is
+      the correct tool for detecting a key's presence.
+    severity: HIGH
+    ai_analysis: true
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      all_of:
+        - field: method_name
+          op: contains
+          value: "SetIamPolicy"
+        - field: raw.protoPayload.request.policy.auditConfigs
+          op: exists
+    fields:
+      Principal: principal_email
+      Resource: resource_name
+      Project: project_id
+
+  # -----------------------------------------------------------------------
+  # TEMPLATE -- copy this, fill it in, and add it to the list above. This
+  # rule is not active (it's inside a comment block, not part of the YAML
+  # list) but shows every available key and a couple of operators/nesting
+  # not used above (not_in, regex, not, ends_with).
+  # -----------------------------------------------------------------------
+  # - id: my_new_rule
+  #   title: "Short human-readable title for the email subject"
+  #   description: "Why this rule exists and what it catches."
+  #   severity: MEDIUM              # must match a key in routing.yaml
+  #   enabled: true
+  #   ai_analysis: false            # set true only if Gemini judgment adds value
+  #   console_url_template: "https://console.cloud.google.com/home/dashboard?project={project_id}"
+  #   match:
+  #     all_of:
+  #       - field: method_name
+  #         op: regex
+  #         value: "^v1\\.compute\\.instances\\.(insert|delete)$"
+  #       - field: principal_email
+  #         op: not_in
+  #         value:
+  #           - "trusted-automation@my-project.iam.gserviceaccount.com"
+  #       - not:
+  #           field: principal_email
+  #           op: ends_with
+  #           value: "@my-trusted-domain.example"
+  #   fields:
+  #     Principal: principal_email
+  #     Method: method_name
+  #     Resource: resource_name

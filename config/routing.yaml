@@ -1,0 +1,52 @@
+# Severity styling and recipient routing for the Gmail alerting layer.
+#
+# This file is the single source of truth for:
+#   - how each severity is colour-coded in the HTML alert email
+#   - who receives an alert for a given severity
+#
+# No rule logic or recipient addresses belong in Python — edit this file
+# instead of src/email_template.py or main.py.
+
+severity_styles:
+  CRITICAL:
+    accent: "#b91c1c"
+    tint: "#fee2e2"
+  HIGH:
+    accent: "#c2410c"
+    tint: "#ffedd5"
+  MEDIUM:
+    accent: "#a16207"
+    tint: "#fef9c3"
+  LOW:
+    accent: "#15803d"
+    tint: "#dcfce7"
+  INFO:
+    accent: "#1d4ed8"
+    tint: "#dbeafe"
+
+  # To add a new severity: add a key here with `accent` (header bar / border
+  # colour) and `tint` (light background colour) hex values, then add a
+  # matching list under `recipients` below (or let it fall back to
+  # `recipients.default`).
+  #
+  # URGENT:
+  #   accent: "#7c3aed"
+  #   tint: "#ede9fe"
+
+recipients:
+  # NOTE: these are placeholder addresses. Replace them with real
+  # distribution lists/mailboxes before deploying.
+  CRITICAL:
+    - secops-oncall@example.com
+  HIGH:
+    - secops-oncall@example.com
+  MEDIUM:
+    - secops-team@example.com
+  LOW:
+    - secops-team@example.com
+  INFO:
+    - secops-team@example.com
+
+  # Used when a finding's severity has no explicit entry above.
+  default:
+    - secops-team@example.com

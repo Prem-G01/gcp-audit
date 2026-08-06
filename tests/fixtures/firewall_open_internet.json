@@ -1,0 +1,31 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "compute.googleapis.com",
+    "methodName": "v1.compute.firewalls.insert",
+    "resourceName": "projects/prj-dg-devops-test/global/firewalls/allow-all-ingress",
+    "authenticationInfo": {
+      "principalEmail": "dave@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.99",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "request": {
+      "sourceRanges": ["0.0.0.0/0"],
+      "allowed": [
+        {"IPProtocol": "tcp", "ports": ["22"]}
+      ]
+    }
+  },
+  "resource": {
+    "type": "gce_firewall_rule",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-05T12:15:00Z",
+  "insertId": "fixture-firewall-open-004",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

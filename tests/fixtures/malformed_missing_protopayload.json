@@ -1,0 +1,11 @@
+{
+  "resource": {
+    "type": "project",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-05T12:30:00Z",
+  "insertId": "fixture-malformed-007"
+}

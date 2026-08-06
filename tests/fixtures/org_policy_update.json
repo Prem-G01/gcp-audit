@@ -1,0 +1,25 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "orgpolicy.googleapis.com",
+    "methodName": "google.cloud.orgpolicy.v2.OrgPolicy.UpdatePolicy",
+    "resourceName": "organizations/123456789012/policies/compute.vmExternalIpAccess",
+    "authenticationInfo": {
+      "principalEmail": "carol@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "192.0.2.5",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    }
+  },
+  "resource": {
+    "type": "organization",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-05T12:10:00Z",
+  "insertId": "fixture-org-policy-003",
+  "logName": "organizations/123456789012/logs/cloudaudit.googleapis.com%2Factivity"
+}

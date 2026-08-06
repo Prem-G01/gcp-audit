@@ -1,0 +1,197 @@
+variable "project_id" {
+  description = "GCP project id."
+  type        = string
+  default     = "prj-dg-devops-test"
+}
+
+variable "region" {
+  description = "Region for the Cloud Function, Pub/Sub, and BigQuery dataset."
+  type        = string
+  default     = "asia-south1"
+}
+
+variable "vertex_location" {
+  description = "Vertex AI region for Gemini calls -- independent of `region`; Gemini model availability is regionally limited."
+  type        = string
+  default     = "us-central1"
+}
+
+variable "environment" {
+  description = "Environment label applied to every resource that supports labels."
+  type        = string
+  default     = "prod"
+}
+
+variable "deployment_mode" {
+  description = <<-EOT
+    "project_only" skips the org-level aggregated log sink and its IAM
+    entirely, so the stack applies without org-level permissions.
+    "full" additionally provisions the org sink -- requires `org_id`.
+  EOT
+  type        = string
+  default     = "project_only"
+
+  validation {
+    condition     = contains(["project_only", "full"], var.deployment_mode)
+    error_message = "deployment_mode must be \"project_only\" or \"full\"."
+  }
+}
+
+variable "org_id" {
+  description = "GCP organization id. Required when deployment_mode = \"full\"; ignored otherwise."
+  type        = string
+  default     = ""
+}
+
+check "org_id_required_for_full_deployment" {
+  assert {
+    condition     = var.deployment_mode != "full" || var.org_id != ""
+    error_message = "org_id must be set when deployment_mode = \"full\"."
+  }
+}
+
+variable "terraform_deploy_service_account_email" {
+  description = <<-EOT
+    Service account the Terraform providers impersonate (see
+    terraform/bootstrap/). Pass the plan SA for `terraform plan` and the
+    apply SA for `terraform apply` -- CI sets this per-job via
+    TF_VAR_terraform_deploy_service_account_email.
+  EOT
+  type        = string
+}
+
+variable "runtime_service_account_email" {
+  description = <<-EOT
+    Pre-existing service account the Cloud Function runs as (created
+    outside Terraform -- Gmail domain-wide delegation is already registered
+    against it in the Workspace Admin Console, which Terraform can't
+    manage). Also used as the Gmail delegation `sub`/GMAIL_DELEGATED_SA.
+  EOT
+  type        = string
+  default     = "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
+}
+
+variable "github_repository" {
+  description = "GitHub repository in \"owner/repo\" form -- must match terraform/bootstrap's github_repository. Informational only at this layer (used in labels/outputs); the actual trust binding lives in bootstrap."
+  type        = string
+  default     = "CHANGE_ME/gcp-audit"
+}
+
+# --- Pub/Sub --------------------------------------------------------------
+
+variable "main_topic_name" {
+  description = "Pub/Sub topic the org sink publishes audit log entries to, and the Cloud Function's trigger topic."
+  type        = string
+  default     = "audit-platform-logs"
+}
+
+variable "dlq_topic_name" {
+  description = "Pub/Sub topic for permanently-undeliverable findings (DLQ_TOPIC env var)."
+  type        = string
+  default     = "audit-platform-dlq"
+}
+
+# --- Cloud Function ---------------------------------------------------------
+
+variable "function_name" {
+  description = "Cloud Function (Gen2) name."
+  type        = string
+  default     = "process-audit-log-gmail-alerts"
+}
+
+variable "function_memory" {
+  description = "Cloud Function memory allocation."
+  type        = string
+  default     = "512Mi"
+}
+
+variable "function_timeout_seconds" {
+  description = "Cloud Function timeout, in seconds."
+  type        = number
+  default     = 120
+}
+
+variable "function_max_instances" {
+  description = "Cloud Function max instance count."
+  type        = number
+  default     = 20
+}
+
+# --- Gmail alerting (values become the function's env vars) --------------
+
+variable "gmail_sender" {
+  description = "Workspace mailbox impersonated when sending alerts (GMAIL_SENDER). PLACEHOLDER -- must hold a Gmail license."
+  type        = string
+  default     = "audit-alerts@yourdomain.example"
+}
+
+variable "gmail_sender_name" {
+  type    = string
+  default = "GCP Audit Platform"
+}
+
+variable "gmail_max_attempts" {
+  type    = number
+  default = 4
+}
+
+variable "gmail_timeout_seconds" {
+  type    = number
+  default = 30
+}
+
+# --- Cloud Asset Inventory enrichment --------------------------------------
+
+variable "cai_cache_ttl_seconds" {
+  type    = number
+  default = 300
+}
+
+variable "cai_timeout_seconds" {
+  type    = number
+  default = 10
+}
+
+# --- Gemini / Vertex AI ----------------------------------------------------
+
+variable "gemini_model" {
+  type    = string
+  default = "gemini-2.5-flash"
+}
+
+variable "gemini_max_tokens" {
+  type    = number
+  default = 400
+}
+
+variable "gemini_timeout_seconds" {
+  type    = number
+  default = 20
+}
+
+# --- BigQuery ---------------------------------------------------------------
+
+variable "bq_dataset_id" {
+  type    = string
+  default = "audit_platform"
+}
+
+variable "bq_table_id" {
+  type    = string
+  default = "alert_events"
+}
+
+# --- Observability -----------------------------------------------------------
+
+variable "notification_channels" {
+  description = <<-EOT
+    Cloud Monitoring notification channel IDs (e.g.
+    "projects/PROJECT/notificationChannels/1234567890") to attach to every
+    alert policy. Empty by default -- create channels for real email/
+    Slack/PagerDuty destinations first (not provisioned here; channel
+    creation needs real destination addresses this repo doesn't have), then
+    populate this in terraform.tfvars.
+  EOT
+  type        = list(string)
+  default     = []
+}

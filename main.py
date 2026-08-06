@@ -1,0 +1,146 @@
+"""Cloud Function entrypoint: Pub/Sub audit log message -> Gmail alert email.
+
+Pipeline: decode Pub/Sub message -> enrich (Cloud Asset Inventory) ->
+evaluate_rules (config/rules.yaml) -> [per finding] conditional Gemini
+analysis -> render + send via the existing Gmail client -> persist to
+BigQuery -> dead-letter on permanent Gmail failure.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import logging
+from typing import Any
+
+import functions_framework
+from cloudevents.http import CloudEvent
+
+from src.analysis.gemini import analyze
+from src.email_template import load_routing_config, render_alert
+from src.enrichment.asset_inventory import enrich
+from src.models import EnrichedEvent, Finding
+from src.persistence.bigquery import Delivery, persist
+from src.rules.engine import evaluate_rules, requires_ai_analysis, write_to_dlq
+from src.senders.gmail_sender import GmailSendError, get_client
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def _resolve_recipients(severity: str) -> list[str]:
+    recipients_config = load_routing_config().get("recipients", {})
+    recipients = recipients_config.get(severity) or recipients_config.get("default") or []
+    return list(recipients)
+
+
+def _decode_message(cloud_event: CloudEvent) -> dict[str, Any]:
+    message = cloud_event.data["message"]
+    raw = base64.b64decode(message["data"])
+    payload: dict[str, Any] = json.loads(raw)
+    return payload
+
+
+def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
+    log_context = {"rule_id": finding.rule_id, "raw_log_id": finding.raw_log_id}
+
+    if requires_ai_analysis(finding.rule_id):
+        finding = analyze(finding, event)
+
+    recipients = _resolve_recipients(finding.severity)
+    subject, html_body, text_body = render_alert(
+        rule_id=finding.rule_id,
+        severity=finding.severity,
+        title=finding.title,
+        fields=finding.fields,
+        ai_analysis=finding.ai_analysis,
+        console_url=finding.console_url,
+    )
+
+    try:
+        message_id = get_client().send(
+            to=recipients,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+            headers={
+                "X-Audit-Rule-Id": finding.rule_id,
+                "X-Audit-Severity": finding.severity,
+                "Auto-Submitted": "auto-generated",
+            },
+        )
+    except GmailSendError as exc:
+        # Permanent configuration/delivery error: log, dead-letter, persist
+        # the failed outcome, and return normally. Re-raising here would
+        # hot-loop the Pub/Sub subscription against a misconfiguration that
+        # a retry cannot fix.
+        logger.error("gmail_alert_send_failed", extra={**log_context, "error": str(exc)})
+        write_to_dlq(finding, reason=str(exc))
+        persist(
+            finding,
+            event,
+            Delivery(
+                recipients=recipients,
+                gmail_message_id=None,
+                delivery_status="failed",
+                delivery_error=str(exc),
+            ),
+        )
+        return
+
+    logger.info("gmail_alert_sent", extra={**log_context, "message_id": message_id})
+    persist(
+        finding,
+        event,
+        Delivery(
+            recipients=recipients,
+            gmail_message_id=message_id,
+            delivery_status="sent",
+            delivery_error=None,
+        ),
+    )
+
+
+@functions_framework.cloud_event
+def process_audit_log(cloud_event: CloudEvent) -> None:
+    """Entry point: process one Pub/Sub-delivered audit log entry."""
+    try:
+        log_entry = _decode_message(cloud_event)
+    except Exception as exc:
+        # A malformed payload will never parse on retry either -- ack it.
+        logger.error("payload_decode_failed", extra={"error": str(exc)})
+        return
+
+    # enrich() and evaluate_rules() are both guaranteed not to raise under
+    # normal operation (constraint 6 / the rules engine's own per-rule
+    # guard); if either does, it's an unforeseen bug and should propagate so
+    # Pub/Sub retries.
+    event = enrich(log_entry)
+    findings = evaluate_rules(event)
+
+    logger.info(
+        "findings_evaluated", extra={"raw_log_id": event.raw_log_id, "finding_count": len(findings)}
+    )
+
+    succeeded = 0
+    failed = 0
+    for finding in findings:
+        try:
+            _handle_finding(finding, event)
+            succeeded += 1
+        except Exception:
+            failed += 1
+            logger.exception(
+                "finding_processing_failed",
+                extra={"rule_id": finding.rule_id, "raw_log_id": finding.raw_log_id},
+            )
+
+    logger.info(
+        "audit_log_processed",
+        extra={
+            "raw_log_id": event.raw_log_id,
+            "finding_count": len(findings),
+            "succeeded": succeeded,
+            "failed": failed,
+        },
+    )

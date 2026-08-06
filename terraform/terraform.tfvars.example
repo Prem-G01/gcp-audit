@@ -1,0 +1,48 @@
+# Copy to terraform.tfvars (gitignored) and fill in the PLACEHOLDER values.
+# terraform_deploy_service_account_email is intentionally NOT given a
+# default in variables.tf -- CI sets it per-job via
+# TF_VAR_terraform_deploy_service_account_email; for a local run, set it
+# here to whichever of the two deploy SAs from terraform/bootstrap/ matches
+# what you're doing (plan SA to only plan, apply SA to actually apply).
+
+project_id = "prj-dg-devops-test"
+region     = "asia-south1"
+vertex_location = "us-central1"
+environment = "prod"
+
+# "project_only" (default) or "full" (requires org_id below).
+deployment_mode = "project_only"
+org_id          = "" # PLACEHOLDER -- your GCP organization id, only if deployment_mode = "full"
+
+terraform_deploy_service_account_email = "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
+runtime_service_account_email          = "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
+
+github_repository = "CHANGE_ME/gcp-audit" # PLACEHOLDER -- must match terraform/bootstrap's github_repository
+
+main_topic_name = "audit-platform-logs"
+dlq_topic_name  = "audit-platform-dlq"
+
+function_name            = "process-audit-log-gmail-alerts"
+function_memory           = "512Mi"
+function_timeout_seconds  = 120
+function_max_instances    = 20
+
+gmail_sender          = "audit-alerts@yourdomain.example" # PLACEHOLDER -- must hold a Gmail license
+gmail_sender_name     = "GCP Audit Platform"
+gmail_max_attempts    = 4
+gmail_timeout_seconds = 30
+
+cai_cache_ttl_seconds = 300
+cai_timeout_seconds   = 10
+
+gemini_model           = "gemini-2.5-flash"
+gemini_max_tokens      = 400
+gemini_timeout_seconds = 20
+
+bq_dataset_id = "audit_platform"
+bq_table_id   = "alert_events"
+
+# PLACEHOLDER -- populate after creating real Cloud Monitoring notification
+# channels (email/Slack/PagerDuty); empty means alert policies fire with no
+# one notified.
+notification_channels = []

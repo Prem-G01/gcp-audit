@@ -1,0 +1,35 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudresourcemanager.googleapis.com",
+    "methodName": "SetIamPolicy",
+    "resourceName": "projects/prj-dg-devops-test",
+    "authenticationInfo": {
+      "principalEmail": "alice@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.10",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "request": {
+      "policy": {
+        "bindings": [
+          {
+            "role": "roles/editor",
+            "members": ["user:alice@example.com"]
+          }
+        ]
+      }
+    }
+  },
+  "resource": {
+    "type": "project",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-05T12:00:00.123456Z",
+  "insertId": "fixture-set-iam-policy-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

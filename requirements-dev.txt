@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest==8.*
+pytest-mock==3.*
+ruff==0.*
+mypy==1.*
+types-PyYAML==6.*
+types-requests==2.*
