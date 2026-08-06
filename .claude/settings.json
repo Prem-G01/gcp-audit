@@ -30,7 +30,10 @@
       "Bash(cd /e/gcp-audit *)",
       "Read(//e//**)",
       "Bash(rm -rf terraform/.terraform terraform/bootstrap/.terraform)",
-      "Bash(rm -rf terraform/.terraform)"
+      "Bash(rm -rf terraform/.terraform)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:registry.terraform.io)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
