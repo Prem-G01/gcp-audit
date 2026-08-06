@@ -11,11 +11,9 @@ name: Terraform
 # credential to protect):
 #   TF_PLAN_WIF_PROVIDER, TF_APPLY_WIF_PROVIDER,
 #   TF_PLAN_SERVICE_ACCOUNT, TF_APPLY_SERVICE_ACCOUNT
-#     (all four from `terraform output` in terraform/bootstrap/)
-#   TF_PROJECT_ID, TF_REGION, TF_ENVIRONMENT, TF_DEPLOYMENT_MODE, TF_ORG_ID,
-#   TF_RUNTIME_SERVICE_ACCOUNT_EMAIL, TF_GITHUB_REPOSITORY, TF_GMAIL_SENDER
-#     (optional -- unset falls back to the variable defaults in
-#     terraform/variables.tf; see terraform/terraform.tfvars.example)
+#   TF_PROJECT_ID, TF_BACKEND_BUCKET
+#   TF_REGION (default: asia-south1)
+#   TF_DEPLOYMENT_MODE (default: project_only)
 #
 # A GitHub Environment named "production" with required reviewers gates the
 # apply job (Settings -> Environments) -- this touches production alerting
@@ -67,15 +65,9 @@ jobs:
         id: plan
         working-directory: terraform
         env:
-          TF_VAR_terraform_deploy_service_account_email: ${{ vars.TF_PLAN_SERVICE_ACCOUNT }}
           TF_VAR_project_id: ${{ vars.TF_PROJECT_ID }}
-          TF_VAR_region: ${{ vars.TF_REGION }}
-          TF_VAR_environment: ${{ vars.TF_ENVIRONMENT }}
-          TF_VAR_deployment_mode: ${{ vars.TF_DEPLOYMENT_MODE }}
-          TF_VAR_org_id: ${{ vars.TF_ORG_ID }}
-          TF_VAR_runtime_service_account_email: ${{ vars.TF_RUNTIME_SERVICE_ACCOUNT_EMAIL }}
-          TF_VAR_github_repository: ${{ vars.TF_GITHUB_REPOSITORY }}
-          TF_VAR_gmail_sender: ${{ vars.TF_GMAIL_SENDER }}
+          TF_VAR_region: ${{ vars.TF_REGION || 'asia-south1' }}
+          TF_VAR_deployment_mode: ${{ vars.TF_DEPLOYMENT_MODE || 'project_only' }}
         run: |
           terraform plan -no-color -input=false -out=tfplan | tee plan_output.txt
         continue-on-error: true
@@ -123,13 +115,7 @@ jobs:
       - name: terraform apply
         working-directory: terraform
         env:
-          TF_VAR_terraform_deploy_service_account_email: ${{ vars.TF_APPLY_SERVICE_ACCOUNT }}
           TF_VAR_project_id: ${{ vars.TF_PROJECT_ID }}
-          TF_VAR_region: ${{ vars.TF_REGION }}
-          TF_VAR_environment: ${{ vars.TF_ENVIRONMENT }}
-          TF_VAR_deployment_mode: ${{ vars.TF_DEPLOYMENT_MODE }}
-          TF_VAR_org_id: ${{ vars.TF_ORG_ID }}
-          TF_VAR_runtime_service_account_email: ${{ vars.TF_RUNTIME_SERVICE_ACCOUNT_EMAIL }}
-          TF_VAR_github_repository: ${{ vars.TF_GITHUB_REPOSITORY }}
-          TF_VAR_gmail_sender: ${{ vars.TF_GMAIL_SENDER }}
+          TF_VAR_region: ${{ vars.TF_REGION || 'asia-south1' }}
+          TF_VAR_deployment_mode: ${{ vars.TF_DEPLOYMENT_MODE || 'project_only' }}
         run: terraform apply -no-color -input=false -auto-approve
