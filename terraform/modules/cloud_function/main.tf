@@ -127,8 +127,14 @@ resource "google_project_service_identity" "pubsub" {
 # before the resulting Google-managed service agent is reliably readable
 # by other APIs for IAM operations. depends_on wouldn't fix this -- it
 # only controls order, not wall-clock delay. This deliberate wait does.
+#
+# 30s was tried first and was NOT enough in practice (observed a real 404
+# in CI at that duration) -- this is empirically-variable propagation
+# delay, not a fixed constant, so bumped with real margin rather than
+# inching up by small increments and burning another full push -> approve
+# -> wait CI cycle on a second undershoot.
 resource "time_sleep" "wait_for_pubsub_service_identity" {
-  create_duration = "30s"
+  create_duration = "90s"
 
   depends_on = [google_project_service_identity.pubsub]
 }
