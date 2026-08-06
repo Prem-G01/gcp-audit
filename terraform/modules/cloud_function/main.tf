@@ -49,6 +49,15 @@ resource "google_cloudfunctions2_function" "process_audit_log" {
   build_config {
     runtime     = "python312"
     entry_point = "process_audit_log"
+    # Without this, Cloud Build (which performs the actual build behind
+    # google_cloudfunctions2_function) defaults to the project's implicit
+    # default Compute Engine SA (PROJECT_NUMBER-compute@developer.gserv
+    # iceaccount.com) -- an identity nothing else in this stack references
+    # or grants actAs on. Point it at the runtime SA instead, which the
+    # apply SA already has roles/iam.serviceAccountUser on (see
+    # terraform/bootstrap/main.tf's apply_runtime_sa_user) -- no new IAM
+    # grant needed.
+    service_account = "projects/${var.project_id}/serviceAccounts/${var.runtime_service_account_email}"
     source {
       storage_source {
         bucket = google_storage_bucket.function_source.name
@@ -128,13 +137,22 @@ resource "google_project_service_identity" "pubsub" {
 # by other APIs for IAM operations. depends_on wouldn't fix this -- it
 # only controls order, not wall-clock delay. This deliberate wait does.
 #
-# 30s was tried first and was NOT enough in practice (observed a real 404
-# in CI at that duration) -- this is empirically-variable propagation
-# delay, not a fixed constant, so bumped with real margin rather than
-# inching up by small increments and burning another full push -> approve
-# -> wait CI cycle on a second undershoot.
+# IMPORTANT: create_duration is NOT ForceNew in the hashicorp/time
+# provider -- bumping it alone (30s -> 90s) on an already-created
+# time_sleep is a no-op in practice: Terraform just records the new value
+# in state without re-running the sleep, because the sleep only happens
+# during the resource's *create* operation. That's what actually caused
+# the 90s attempt to still 404 -- it never re-waited at all, it hit the
+# exact same unaged service identity as the 30s attempt. `triggers` is
+# the documented mechanism for forcing a fresh create (and therefore a
+# fresh sleep) on a value change -- bump wait_attempt, not just
+# create_duration, any time this needs to actually take effect again.
 resource "time_sleep" "wait_for_pubsub_service_identity" {
   create_duration = "90s"
+
+  triggers = {
+    wait_attempt = "2"
+  }
 
   depends_on = [google_project_service_identity.pubsub]
 }
