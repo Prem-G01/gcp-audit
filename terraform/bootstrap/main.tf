@@ -155,7 +155,15 @@ locals {
     "roles/logging.admin",
     "roles/monitoring.admin",
     "roles/storage.admin",
-    "roles/iam.serviceAccountIamAdmin",
+    # roles/iam.serviceAccountIamAdmin does not exist as a real GCP
+    # predefined role (confirmed the hard way -- GCP rejects it with
+    # "Error 400: ... is not supported for this resource" at apply time,
+    # not at plan/validate time, since Terraform doesn't validate role
+    # name existence). roles/iam.serviceAccountAdmin is the real role that
+    # covers IAM-policy management on service accounts -- it's broader
+    # than strictly necessary (also grants create/disable/delete of SAs,
+    # not just IAM policy management), but it's what actually exists.
+    "roles/iam.serviceAccountAdmin",
     "roles/resourcemanager.projectIamAdmin",
   ]
 }
