@@ -66,8 +66,8 @@ jobs:
         working-directory: terraform
         env:
           TF_VAR_project_id: ${{ vars.TF_PROJECT_ID }}
-          TF_VAR_region: ${{ vars.TF_REGION || 'asia-south1' }}
-          TF_VAR_deployment_mode: ${{ vars.TF_DEPLOYMENT_MODE || 'project_only' }}
+          TF_VAR_REGION: ${{ vars.TF_VAR_REGION }}
+          TF_VAR_DEPLOYMENT_MODE: ${{ vars.TF_VAR_DEPLOYMENT_MODE }}
         run: |
           terraform plan -no-color -input=false -out=tfplan | tee plan_output.txt
         continue-on-error: true
