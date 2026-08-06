@@ -119,8 +119,24 @@ resource "google_project_service_identity" "pubsub" {
   service  = "pubsub.googleapis.com"
 }
 
+# NOT a Terraform ordering bug -- the IAM member below already has an
+# implicit dependency on the service identity via the direct attribute
+# reference in service_account_id, so Terraform already sequences these
+# calls correctly. The 404 is a genuine GCP eventual-consistency race:
+# google_project_service_identity reports success (and returns an email)
+# before the resulting Google-managed service agent is reliably readable
+# by other APIs for IAM operations. depends_on wouldn't fix this -- it
+# only controls order, not wall-clock delay. This deliberate wait does.
+resource "time_sleep" "wait_for_pubsub_service_identity" {
+  create_duration = "30s"
+
+  depends_on = [google_project_service_identity.pubsub]
+}
+
 resource "google_service_account_iam_member" "pubsub_sa_token_creator" {
   service_account_id = "projects/${var.project_id}/serviceAccounts/${google_project_service_identity.pubsub.email}"
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:${google_project_service_identity.pubsub.email}"
+
+  depends_on = [time_sleep.wait_for_pubsub_service_identity]
 }

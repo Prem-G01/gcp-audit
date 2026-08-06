@@ -158,3 +158,17 @@ resource "google_project_iam_member" "apply_roles" {
   role     = each.value
   member   = "serviceAccount:${google_service_account.terraform_apply.email}"
 }
+
+# roles/iam.serviceAccountAdmin (above) manages IAM policy ON service
+# accounts but does NOT include iam.serviceAccounts.actAs -- that's a
+# separate permission, bundled only in roles/iam.serviceAccountUser.
+# Terraform needs actAs on the runtime SA specifically to attach it to the
+# Cloud Function resource (module.cloud_function's
+# google_cloudfunctions2_function.service_config.service_account_email).
+# Scoped to exactly this one SA via service_account_id, not project-wide --
+# the apply SA must not be able to actAs arbitrary service accounts.
+resource "google_service_account_iam_member" "apply_runtime_sa_user" {
+  service_account_id = "projects/${var.project_id}/serviceAccounts/${var.runtime_service_account_email}"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.terraform_apply.email}"
+}

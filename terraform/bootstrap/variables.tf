@@ -26,3 +26,15 @@ variable "pool_id" {
   type        = string
   default     = "audit-platform-github"
 }
+
+variable "runtime_service_account_email" {
+  description = <<-EOT
+    Pre-existing Cloud Function runtime SA. The apply SA needs actAs rights
+    on exactly this SA (roles/iam.serviceAccountUser, scoped to this SA
+    only -- not project-wide) to attach it to the Cloud Function resource
+    that module.cloud_function creates. Must match
+    terraform/variables.tf's runtime_service_account_email.
+  EOT
+  type        = string
+  default     = "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
+}
