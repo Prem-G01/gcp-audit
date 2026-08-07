@@ -62,3 +62,19 @@ variable "additional_monitored_project_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "monitored_folder_ids" {
+  description = <<-EOT
+    Folder IDs (bare numeric id, not "folders/123..." prefixed) to
+    monitor via their own folder-level sink -- covers that folder and
+    everything nested under it (sub-folders, every current and future
+    project) automatically via include_children, without a grant or sink
+    per individual project. Unlike the org-level sink, a folder NOT
+    listed here stays completely uncovered -- use this to deliberately
+    keep e.g. a sandbox/pre-production folder quiet, only alerting once a
+    project is moved into a monitored folder. Each folder here needs the
+    apply SA granted roles/logging.admin at THAT folder's level first.
+  EOT
+  type        = list(string)
+  default     = []
+}

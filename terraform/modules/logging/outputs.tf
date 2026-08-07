@@ -20,3 +20,8 @@ output "additional_monitored_project_writer_identities" {
   description = "Map of project_id -> writer_identity, one per entry in additional_monitored_project_ids."
   value       = { for project_id, sink in google_logging_project_sink.additional_monitored : project_id => sink.writer_identity }
 }
+
+output "monitored_folder_writer_identities" {
+  description = "Map of folder_id -> writer_identity, one per entry in monitored_folder_ids."
+  value       = { for folder_id, sink in google_logging_folder_sink.monitored_folder : folder_id => sink.writer_identity }
+}

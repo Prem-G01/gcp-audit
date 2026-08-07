@@ -84,3 +84,32 @@ resource "google_pubsub_topic_iam_member" "additional_monitored_writer" {
   role    = "roles/pubsub.publisher"
   member  = each.value.writer_identity
 }
+
+# Folder-scoped sinks -- covers a folder AND everything nested under it
+# (sub-folders, every current and future project in them) via
+# include_children, without a grant or sink per individual project. Unlike
+# the org-level sink, folders NOT listed here stay completely uncovered --
+# lets you deliberately keep e.g. a sandbox/pre-production folder quiet
+# and only start alerting on a project once it's moved into a monitored
+# folder. Each folder here needs the apply SA granted roles/logging.admin
+# at THAT folder's level first.
+resource "google_logging_folder_sink" "monitored_folder" {
+  for_each = toset(var.monitored_folder_ids)
+
+  name             = "${var.sink_name}-folder"
+  folder           = each.value
+  destination      = "pubsub.googleapis.com/${var.destination_topic_id}"
+  filter           = var.filter
+  include_children = true
+
+  description = "Admin Activity audit logs from folder ${each.value} and everything nested under it, feeding the central alerting pipeline in ${var.destination_project_id}."
+}
+
+resource "google_pubsub_topic_iam_member" "monitored_folder_writer" {
+  for_each = google_logging_folder_sink.monitored_folder
+
+  project = var.destination_project_id
+  topic   = var.destination_topic_name
+  role    = "roles/pubsub.publisher"
+  member  = each.value.writer_identity
+}

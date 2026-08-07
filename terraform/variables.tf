@@ -68,6 +68,26 @@ variable "additional_monitored_project_ids" {
   default     = []
 }
 
+variable "monitored_folder_ids" {
+  description = <<-EOT
+    Folder IDs (bare numeric id, not "folders/123..." prefixed) to
+    monitor via their own folder-level sink -- covers that folder and
+    everything nested under it (sub-folders, every current and future
+    project) automatically, without a grant or sink per individual
+    project. Unlike deployment_mode = "full", a folder NOT listed here
+    stays completely uncovered -- use this to deliberately keep e.g. a
+    sandbox/pre-production folder quiet, only alerting once a project is
+    moved into a monitored folder. Each folder listed here needs the
+    apply SA granted roles/logging.admin at THAT folder's level first:
+
+      gcloud resource-manager folders add-iam-policy-binding FOLDER_ID \
+        --member="serviceAccount:tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com" \
+        --role="roles/logging.admin"
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "terraform_deploy_service_account_email" {
   description = <<-EOT
     Service account the Terraform providers impersonate (see

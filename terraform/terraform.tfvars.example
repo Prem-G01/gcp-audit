@@ -19,6 +19,13 @@ org_id          = "" # PLACEHOLDER -- your GCP organization id, only if deployme
 # that project's level first (see variables.tf for the exact command).
 # additional_monitored_project_ids = ["some-other-project-id", "another-project-id"]
 
+# Optional: monitor specific folders (and everything -- current and
+# future -- nested under them) without org-level access. A folder NOT
+# listed stays uncovered, e.g. keep a sandbox folder quiet and only
+# monitor a "production" folder. Each folder needs the apply SA granted
+# roles/logging.admin at that folder's level first (see variables.tf).
+# monitored_folder_ids = ["123456789012"]
+
 terraform_deploy_service_account_email = "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
 runtime_service_account_email          = "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
 

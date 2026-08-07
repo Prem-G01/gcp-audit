@@ -44,3 +44,8 @@ output "additional_monitored_project_writer_identities" {
   description = "Map of project_id -> writer_identity, one per entry in additional_monitored_project_ids."
   value       = module.logging.additional_monitored_project_writer_identities
 }
+
+output "monitored_folder_writer_identities" {
+  description = "Map of folder_id -> writer_identity, one per entry in monitored_folder_ids."
+  value       = module.logging.monitored_folder_writer_identities
+}
