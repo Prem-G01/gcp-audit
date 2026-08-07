@@ -39,3 +39,8 @@ output "project_sink_writer_identity" {
   description = "null once deployment_mode = \"full\" (the org sink takes over)."
   value       = module.logging.project_sink_writer_identity
 }
+
+output "additional_monitored_project_writer_identities" {
+  description = "Map of project_id -> writer_identity, one per entry in additional_monitored_project_ids."
+  value       = module.logging.additional_monitored_project_writer_identities
+}

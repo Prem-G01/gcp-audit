@@ -34,12 +34,13 @@ module "pubsub" {
 module "logging" {
   source = "./modules/logging"
 
-  enabled                = var.deployment_mode == "full"
-  project_sink_enabled   = var.deployment_mode != "full"
-  org_id                 = var.org_id
-  destination_project_id = var.project_id
-  destination_topic_name = module.pubsub.main_topic_name
-  destination_topic_id   = module.pubsub.main_topic_id
+  enabled                          = var.deployment_mode == "full"
+  project_sink_enabled             = var.deployment_mode != "full"
+  additional_monitored_project_ids = var.additional_monitored_project_ids
+  org_id                           = var.org_id
+  destination_project_id           = var.project_id
+  destination_topic_name           = module.pubsub.main_topic_name
+  destination_topic_id             = module.pubsub.main_topic_id
 }
 
 module "bigquery" {

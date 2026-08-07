@@ -49,3 +49,16 @@ variable "project_sink_enabled" {
   type        = bool
   default     = false
 }
+
+variable "additional_monitored_project_ids" {
+  description = <<-EOT
+    Additional GCP project IDs to monitor, each via its own project-level
+    sink forwarding to the same central Pub/Sub topic. A middle ground
+    when org-level monitoring isn't available yet (needs org-admin
+    access) but specific other projects still need coverage now. Each
+    project here needs the apply SA granted roles/logging.admin at that
+    project's level first.
+  EOT
+  type        = list(string)
+  default     = []
+}

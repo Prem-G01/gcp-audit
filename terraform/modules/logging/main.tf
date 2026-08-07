@@ -55,3 +55,32 @@ resource "google_pubsub_topic_iam_member" "project_sink_writer" {
   role    = "roles/pubsub.publisher"
   member  = google_logging_project_sink.audit_activity[0].writer_identity
 }
+
+# Explicitly-named additional projects to monitor, each via its own
+# project-level sink forwarding to the SAME central topic in
+# destination_project_id -- a middle ground when org-level monitoring
+# (the sink above, gated by `enabled`) isn't available yet (needs
+# org-admin access) but specific other projects still need coverage now.
+# Each project in this list needs the apply SA granted roles/logging.admin
+# at THAT project's level (not org-level) before it can be added here --
+# see the root module's README/runbook for the exact grant command.
+resource "google_logging_project_sink" "additional_monitored" {
+  for_each = toset(var.additional_monitored_project_ids)
+
+  name                   = "${var.sink_name}-project"
+  project                = each.value
+  destination            = "pubsub.googleapis.com/${var.destination_topic_id}"
+  filter                 = var.filter
+  unique_writer_identity = true
+
+  description = "Admin Activity audit logs from ${each.value}, feeding the central alerting pipeline in ${var.destination_project_id}."
+}
+
+resource "google_pubsub_topic_iam_member" "additional_monitored_writer" {
+  for_each = google_logging_project_sink.additional_monitored
+
+  project = var.destination_project_id
+  topic   = var.destination_topic_name
+  role    = "roles/pubsub.publisher"
+  member  = each.value.writer_identity
+}

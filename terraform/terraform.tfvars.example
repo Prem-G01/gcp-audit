@@ -14,6 +14,11 @@ environment = "prod"
 deployment_mode = "project_only"
 org_id          = "" # PLACEHOLDER -- your GCP organization id, only if deployment_mode = "full"
 
+# Optional: monitor specific OTHER projects without org-level access.
+# Each project here needs the apply SA granted roles/logging.admin at
+# that project's level first (see variables.tf for the exact command).
+# additional_monitored_project_ids = ["some-other-project-id", "another-project-id"]
+
 terraform_deploy_service_account_email = "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
 runtime_service_account_email          = "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
 

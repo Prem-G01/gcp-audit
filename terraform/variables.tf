@@ -50,6 +50,24 @@ check "org_id_required_for_full_deployment" {
   }
 }
 
+variable "additional_monitored_project_ids" {
+  description = <<-EOT
+    Additional GCP project IDs to monitor, each via its own project-level
+    log sink forwarding to this stack's central Pub/Sub topic. A middle
+    ground when org-level monitoring (deployment_mode = "full") isn't
+    available yet but specific other projects still need coverage now.
+    Each project listed here needs the apply SA
+    (terraform_deploy_service_account_email) granted roles/logging.admin
+    at THAT project's level first:
+
+      gcloud projects add-iam-policy-binding OTHER_PROJECT_ID \
+        --member="serviceAccount:tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com" \
+        --role="roles/logging.admin"
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "terraform_deploy_service_account_email" {
   description = <<-EOT
     Service account the Terraform providers impersonate (see
