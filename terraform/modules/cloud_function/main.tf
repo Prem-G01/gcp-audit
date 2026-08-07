@@ -122,6 +122,21 @@ resource "google_cloud_run_v2_service_iam_member" "invoker" {
   member   = "serviceAccount:${var.runtime_service_account_email}"
 }
 
+# Required because build_config.service_account (above) points Cloud Build
+# at the runtime SA instead of the default compute SA. The default compute
+# SA has broad implicit access historically; our deliberately narrow
+# runtime SA does not, and needs this explicitly to pull/push build
+# layers and cache to the "gcf-artifacts" Artifact Registry repo Cloud
+# Functions auto-manages. Project-scoped, not repo-scoped, because that
+# repository doesn't exist until the first successful build creates it --
+# a genuine chicken-and-egg case, unlike every other binding in this
+# stack, which are all resource-scoped.
+resource "google_project_iam_member" "build_artifact_registry_writer" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${var.runtime_service_account_email}"
+}
+
 # REMOVED (was: google_project_service_identity.pubsub +
 # time_sleep.wait_for_pubsub_service_identity +
 # google_service_account_iam_member.pubsub_sa_token_creator).
