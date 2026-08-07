@@ -43,15 +43,29 @@ if ($Confirmation -ne "configure") {
 }
 
 Write-Host "Discovering the Eventarc-managed trigger for $FunctionName..."
-$TriggerName = "$FunctionName-$Region" # Cloud Functions v2's default Eventarc trigger naming
+# Cloud Functions v2 names its auto-created trigger "<function>-<random-suffix>"
+# (NOT "<function>-<region>" -- confirmed wrong the hard way against a real
+# deployment). Filter by destination instead of guessing the name pattern.
+$TriggerName = gcloud eventarc triggers list `
+    --project=$Project --location=$Region `
+    --filter="destination.cloudRun.service=$FunctionName" `
+    --format="value(name)"
+
+if ([string]::IsNullOrWhiteSpace($TriggerName)) {
+    Write-Host "Could not find a trigger whose destination is $FunctionName."
+    Write-Host "List all triggers to find it manually:"
+    Write-Host "  gcloud eventarc triggers list --project=$Project --location=$Region"
+    exit 1
+}
+
 $Subscription = gcloud eventarc triggers describe $TriggerName `
     --project=$Project --location=$Region `
     --format="value(transport.pubsub.subscription)"
 
 if ([string]::IsNullOrWhiteSpace($Subscription)) {
-    Write-Host "Could not discover the trigger's subscription automatically."
-    Write-Host "List triggers with:"
-    Write-Host "  gcloud eventarc triggers list --project=$Project --location=$Region"
+    Write-Host "Found trigger $TriggerName but could not read its subscription."
+    Write-Host "Describe it manually:"
+    Write-Host "  gcloud eventarc triggers describe $TriggerName --project=$Project --location=$Region"
     exit 1
 }
 

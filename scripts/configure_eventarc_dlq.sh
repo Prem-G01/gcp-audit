@@ -40,15 +40,29 @@ if [[ "${CONFIRMATION}" != "configure" ]]; then
 fi
 
 echo "Discovering the Eventarc-managed trigger for ${FUNCTION_NAME}..."
-TRIGGER_NAME="${FUNCTION_NAME}-${REGION}" # Cloud Functions v2's default Eventarc trigger naming
+# Cloud Functions v2 names its auto-created trigger "<function>-<random-suffix>"
+# (NOT "<function>-<region>" -- confirmed wrong the hard way against a real
+# deployment). Filter by destination instead of guessing the name pattern.
+TRIGGER_NAME="$(gcloud eventarc triggers list \
+  --project="${PROJECT}" --location="${REGION}" \
+  --filter="destination.cloudRun.service=${FUNCTION_NAME}" \
+  --format="value(name)")"
+
+if [[ -z "${TRIGGER_NAME}" ]]; then
+  echo "Could not find a trigger whose destination is ${FUNCTION_NAME}."
+  echo "List all triggers to find it manually:"
+  echo "  gcloud eventarc triggers list --project=${PROJECT} --location=${REGION}"
+  exit 1
+fi
+
 SUBSCRIPTION="$(gcloud eventarc triggers describe "${TRIGGER_NAME}" \
   --project="${PROJECT}" --location="${REGION}" \
   --format="value(transport.pubsub.subscription)")"
 
 if [[ -z "${SUBSCRIPTION}" ]]; then
-  echo "Could not discover the trigger's subscription automatically."
-  echo "List triggers with:"
-  echo "  gcloud eventarc triggers list --project=${PROJECT} --location=${REGION}"
+  echo "Found trigger ${TRIGGER_NAME} but could not read its subscription."
+  echo "Describe it manually:"
+  echo "  gcloud eventarc triggers describe ${TRIGGER_NAME} --project=${PROJECT} --location=${REGION}"
   exit 1
 fi
 
