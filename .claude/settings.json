@@ -34,7 +34,8 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:registry.terraform.io)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(bash -n /e/gcp-audit/scripts/test_all_rules.sh)"
     ]
   }
 }
