@@ -1,0 +1,32 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudresourcemanager.googleapis.com",
+    "methodName": "google.cloud.resourcemanager.v3.Projects.CreateProject",
+    "resourceName": "projects/new-shadow-project-123",
+    "authenticationInfo": {
+      "principalEmail": "frank@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.150",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "request": {
+      "project": {
+        "projectId": "new-shadow-project-123",
+        "displayName": "new-shadow-project-123",
+        "parent": "organizations/123456789012"
+      }
+    }
+  },
+  "resource": {
+    "type": "project",
+    "labels": {
+      "project_id": "new-shadow-project-123"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-07T09:00:00Z",
+  "insertId": "fixture-project-created-009",
+  "logName": "organizations/123456789012/logs/cloudaudit.googleapis.com%2Factivity"
+}

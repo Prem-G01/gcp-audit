@@ -432,6 +432,72 @@ rules:
       User Agent: request_metadata.user_agent
       Requested Change: raw.protoPayload.request
 
+  # 9. New project created. Only ever visible to an ORG-LEVEL log sink --
+  #    a project-scoped sink structurally cannot see this event, because
+  #    the project doesn't exist yet at the moment it's created; the audit
+  #    log entry is emitted under the parent org/folder, not the new
+  #    project. Requires config/routing.yaml's deployment_mode = "full"
+  #    (see terraform/modules/logging) to ever fire.
+  - id: project_created
+    title: "New GCP project created"
+    description: >
+      A new project was created somewhere in the organization. Legitimate
+      most of the time, but new-project creation is also how shadow IT and
+      exfiltration staging areas get set up outside existing guardrails --
+      worth a human glance every time.
+    severity: HIGH
+    ai_analysis: true
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      field: method_name
+      op: contains
+      value: "CreateProject"
+    fields:
+      Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Event Time (UTC): event_timestamp
+      New Project Resource: resource_name
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Project Details: raw.protoPayload.request
+
+  # 10. Billing account linked/changed, either on a project (someone
+  #     switched which billing account pays for a project -- a classic
+  #     cost-fraud/account-takeover move) or on the billing account
+  #     resource itself. Also org-sink-dependent for anything outside this
+  #     project. CRITICAL: unlike most changes here, a billing swap can
+  #     have immediate real-money consequences.
+  - id: billing_account_changed
+    title: "Billing account linked or modified"
+    description: >
+      A project's billing account was linked/changed, or the billing
+      account resource itself was modified (created, updated, moved,
+      IAM changed). Matches both google.cloud.billing.v1.CloudBilling.
+      UpdateProjectBillingInfo and direct BillingAccount-resource methods.
+    severity: CRITICAL
+    ai_analysis: true
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      field: method_name
+      op: regex
+      value: "(BillingAccount|ProjectBillingInfo)"
+    fields:
+      Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Event Time (UTC): event_timestamp
+      Method: method_name
+      Resource: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Change: raw.protoPayload.request
+
   # -----------------------------------------------------------------------
   # TEMPLATE -- copy this, fill it in, and add it to the list above. This
   # rule is not active (it's inside a comment block, not part of the YAML

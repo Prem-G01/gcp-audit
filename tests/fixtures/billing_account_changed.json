@@ -1,0 +1,30 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudbilling.googleapis.com",
+    "methodName": "google.cloud.billing.v1.CloudBilling.UpdateProjectBillingInfo",
+    "resourceName": "projects/prj-dg-devops-test",
+    "authenticationInfo": {
+      "principalEmail": "grace@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.160",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "request": {
+      "projectBillingInfo": {
+        "billingAccountName": "billingAccounts/000000-111111-222222"
+      }
+    }
+  },
+  "resource": {
+    "type": "project",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-07T09:05:00Z",
+  "insertId": "fixture-billing-changed-010",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}
