@@ -63,3 +63,57 @@ def test_subject_format() -> None:
         rule_id="RULE-42", severity="HIGH", title="Something Bad Happened", fields={}
     )
     assert subject == "[HIGH] Something Bad Happened - RULE-42"
+
+
+def test_nested_list_of_dicts_renders_as_table_not_repr() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1",
+        severity="HIGH",
+        title="Title",
+        fields={
+            "IAM Binding Changes (Delta)": [
+                {"action": "ADD", "role": "roles/editor", "member": "user:alice@example.com"}
+            ]
+        },
+    )
+    # A raw Python repr would read "[{'action': 'ADD', ...". Confirm that's gone
+    # and the value instead rendered as its own nested <table>.
+    assert "[{'action'" not in html_body
+    assert html_body.count("<table") >= 2
+    assert "action" in html_body
+    assert "ADD" in html_body
+    assert "roles/editor" in html_body
+
+
+def test_nested_dict_renders_as_table() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1",
+        severity="HIGH",
+        title="Title",
+        fields={"Requested Policy": {"bindings": [{"role": "roles/viewer", "members": ["allUsers"]}]}},
+    )
+    assert "{'bindings'" not in html_body
+    assert "bindings" in html_body
+    assert "allUsers" in html_body
+
+
+def test_html_injection_in_nested_value_is_escaped() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1",
+        severity="HIGH",
+        title="Title",
+        fields={"Delegation Chain": [{"principalSubject": "<img src=x onerror=alert(1)>"}]},
+    )
+    assert "<img src=x onerror=alert(1)>" not in html_body
+    assert "&lt;img src=x onerror=alert(1)&gt;" in html_body
+
+
+def test_empty_nested_dict_and_list_render_without_raising() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1",
+        severity="HIGH",
+        title="Title",
+        fields={"Outer": {"empty_dict": {}, "empty_list": [], "scalar": "x"}},
+    )
+    assert "(empty)" in html_body
+    assert "scalar" in html_body

@@ -1,0 +1,29 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "compute.googleapis.com",
+    "methodName": "v1.compute.instances.insert",
+    "resourceName": "projects/prj-dg-devops-test/zones/asia-south1-a/instances/ci-deployed-vm",
+    "authenticationInfo": {
+      "principalSubject": "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github-pool/subject/repo:example-org/example-repo:ref:refs/heads/main"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.201",
+      "callerSuppliedUserAgent": "google-api-go-client/0.5 GitHubActions"
+    },
+    "request": {
+      "name": "ci-deployed-vm",
+      "machineType": "zones/asia-south1-a/machineTypes/e2-medium"
+    }
+  },
+  "resource": {
+    "type": "gce_instance",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-05T12:30:00Z",
+  "insertId": "fixture-federated-008",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

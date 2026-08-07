@@ -56,6 +56,37 @@
 # or `request_metadata.caller_ip`. A path that doesn't resolve is a
 # NON-MATCH for every operator except `not_exists`.
 #
+# `raw` carries the ENTIRE original Cloud Audit Log entry -- every field
+# GCP ever puts on protoPayload.authenticationInfo is reachable through it,
+# not just principal_email. Useful paths for identity/attribution and
+# before-after detail (present only when the calling API actually populates
+# them -- always resolve via `fields:`, which silently omits anything
+# absent, never via `match:` unless you also handle the not-present case):
+#   raw.protoPayload.authenticationInfo.principalSubject
+#       Full principal string. For a human/SA it mirrors principalEmail
+#       prefixed with user:/serviceAccount:; for a Workload Identity
+#       Federation caller (no GCP principalEmail at all) it looks like
+#       principal://iam.googleapis.com/projects/NUM/locations/global/
+#       workloadIdentityPools/POOL/subject/SUBJECT -- this is the only
+#       reliable way to see a federated/external caller's real identity.
+#   raw.protoPayload.authenticationInfo.serviceAccountKeyName
+#       Resource name of the SA key used, when the call was authenticated
+#       with a long-lived JSON key rather than short-lived credentials.
+#   raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+#       The impersonation/delegation chain -- who (or what federated
+#       identity) is actually behind a service-account-attributed call.
+#   raw.protoPayload.serviceData.policyDelta.bindingDeltas
+#       A genuine before/after: explicit ADD/REMOVE entries for IAM policy
+#       binding changes, when the calling service populates it. Most other
+#       APIs do NOT log a prior state at all -- only `request` (the newly
+#       submitted state). Cloud Asset Inventory enrichment here is
+#       current-state-only (no history), so anything not covered by a
+#       delta field genuinely has no "before" available to this pipeline.
+#   raw.protoPayload.request / raw.protoPayload.response
+#       The newly-requested state / the API's response. Label these
+#       "Requested ..." in `fields:`, not "before/after" -- they are not a
+#       diff.
+#
 # -----------------------------------------------------------------------------
 # OPERATORS (closed set -- exactly these eleven, nothing else, no eval/exec)
 # -----------------------------------------------------------------------------
@@ -118,10 +149,16 @@ rules:
       value: "SetIamPolicy"
     fields:
       Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
       Method: method_name
       Resource: resource_name
       Project: project_id
       Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      IAM Binding Changes (Delta): raw.protoPayload.serviceData.policyDelta.bindingDeltas
+      Requested Policy: raw.protoPayload.request.policy
 
   # 2. Service account key creation -- long-lived credentials are a
   #    perennial top exfiltration risk.
@@ -141,9 +178,13 @@ rules:
       value: "google.iam.admin.v1.CreateServiceAccountKey"
     fields:
       Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
       Service Account: resource_name
       Project: project_id
       Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
 
   # 3. Organization policy modification -- org policies are guardrails;
   #    changing one often *removes* a guardrail rather than adding one.
@@ -164,9 +205,15 @@ rules:
       value: "OrgPolicy"
     fields:
       Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
       Method: method_name
       Resource: resource_name
       Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Policy: raw.protoPayload.request
 
   # 4. Firewall rule permitting the entire internet.
   - id: firewall_open_to_internet
@@ -192,10 +239,15 @@ rules:
           value: "0.0.0.0/0"
     fields:
       Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
       Method: method_name
       Firewall Rule: resource_name
       Project: project_id
       Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Firewall Config: raw.protoPayload.request
 
   # 5. Public IAM/bucket grant -- allUsers or allAuthenticatedUsers added
   #    to any policy. Intentionally broad: alerting on ANY occurrence,
@@ -231,9 +283,15 @@ rules:
               value: "allAuthenticatedUsers"
     fields:
       Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
       Resource: resource_name
       Project: project_id
       Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      IAM Binding Changes (Delta): raw.protoPayload.serviceData.policyDelta.bindingDeltas
+      Requested Policy: raw.protoPayload.request.policy
 
   # 6. Audit logging configuration changed -- often the first move to
   #    reduce visibility before other changes.
@@ -260,8 +318,111 @@ rules:
           op: exists
     fields:
       Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
       Resource: resource_name
       Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Audit Config: raw.protoPayload.request.policy.auditConfigs
+
+  # 7. Safety net -- ANY mutating Admin Activity call not already caught by
+  #    a rule above. Without this, a method nobody thought to write a rule
+  #    for produces zero alert, silently. LOW severity by design: this rule
+  #    is meant to guarantee visibility, not to compete with the specific
+  #    CRITICAL/HIGH rules above for attention.
+  #
+  #    It deliberately does NOT try to exclude every case already covered
+  #    by rules 4-6 (e.g. a non-public firewall change or a SetIamPolicy
+  #    call with no auditConfigs/allUsers will match both this rule and
+  #    nothing else, or this rule and one other) -- only the three method
+  #    families that rules 1-3 catch UNCONDITIONALLY (every SetIamPolicy,
+  #    every CreateServiceAccountKey, every OrgPolicy call) are excluded,
+  #    since those would otherwise duplicate a HIGH alert on literally
+  #    every single occurrence. Precisely excluding every conditionally-
+  #    matched rule's exact shape here would silently reopen the exact gap
+  #    this rule exists to close the next time one of those conditions
+  #    changes. A little overlap (an extra LOW email alongside a CRITICAL
+  #    one) is the safer failure mode for a safety net than a silent gap.
+  - id: unclassified_admin_activity
+    title: "Unclassified admin activity"
+    description: >
+      A mutating call (insert/create/update/patch/delete/remove/enable/
+      disable/revoke/grant/add/attach/detach/rotate/undelete/restore/move/
+      import/export) was made against a resource and didn't fall under
+      SetIamPolicy, CreateServiceAccountKey, or an OrgPolicy method --
+      i.e. it isn't specifically covered by any other rule in this file.
+      Exists so nothing mutating is ever silently unalerted.
+    severity: LOW
+    ai_analysis: false
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      all_of:
+        - field: method_name
+          op: regex
+          value: '(?i)(insert|create|update|patch|delete|remove|enable|disable|revoke|grant|add|attach|detach|rotate|undelete|restore|move|import|export)'
+        - not:
+            field: method_name
+            op: contains
+            value: "SetIamPolicy"
+        - not:
+            field: method_name
+            op: contains
+            value: "CreateServiceAccountKey"
+        - not:
+            field: method_name
+            op: contains
+            value: "OrgPolicy"
+    fields:
+      Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Method: method_name
+      Resource: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Change: raw.protoPayload.request
+
+  # 8. Federated/external identity (Workload Identity Federation) performed
+  #    a mutating action. Fires IN ADDITION to whichever rule above also
+  #    matched (rules are independent -- this is intentional): an external
+  #    identity acting on this project is inherently higher-scrutiny than
+  #    an internal user or one of this project's own service accounts,
+  #    regardless of what the action actually was.
+  - id: federated_identity_action
+    title: "Federated identity performed a mutating action"
+    description: >
+      The calling principal's principalSubject indicates a Workload
+      Identity Federation caller (an external identity -- e.g. a GitHub
+      Actions run or another cloud's workload -- impersonating access into
+      this project, never a native GCP user or service account). Flags any
+      mutating call from such a caller for extra scrutiny.
+    severity: HIGH
+    ai_analysis: true
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      all_of:
+        - field: raw.protoPayload.authenticationInfo.principalSubject
+          op: contains
+          value: "workloadIdentityPools"
+        - field: method_name
+          op: regex
+          value: '(?i)(insert|create|update|patch|delete|remove|enable|disable|revoke|grant|add|attach|detach|rotate|undelete|restore|move|import|export|set)'
+    fields:
+      Principal Subject (Federated Identity): raw.protoPayload.authenticationInfo.principalSubject
+      Principal Email (if mapped): principal_email
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Method: method_name
+      Resource: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Change: raw.protoPayload.request
 
   # -----------------------------------------------------------------------
   # TEMPLATE -- copy this, fill it in, and add it to the list above. This

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Publishes one synthetic audit-log event per shipped rule in
-# config/rules.yaml (covering create, modify, and a delete that should NOT
-# match anything), so you can confirm all six rules actually fire against
-# the live deployed pipeline -- not just the one rule (iam_policy_change)
-# the original smoke test covered.
+# config/rules.yaml (covering create, modify, a delete, and a Workload
+# Identity Federation caller), so you can confirm all eight rules actually
+# fire against the live deployed pipeline -- not just the one rule
+# (iam_policy_change) the original smoke test covered.
 #
 # Uses the Pub/Sub REST API directly via curl + jq (not `gcloud pubsub
 # topics publish --message=...`) -- jq builds the JSON safely with proper
@@ -13,7 +13,7 @@
 # Nothing here creates, deletes, or modifies any real GCP resource --
 # every event is synthetic, injected directly into the Pub/Sub topic the
 # real org-wide log sink would otherwise feed. It DOES cause real emails to
-# be sent and (for the three ai_analysis: true rules) real Vertex AI/Gemini
+# be sent and (for the four ai_analysis: true rules) real Vertex AI/Gemini
 # calls, so it's not entirely free or silent -- hence the confirmation
 # prompt below.
 #
@@ -26,8 +26,8 @@ DELAY_BETWEEN_EVENTS_SECONDS=5
 
 echo "Project: ${PROJECT}"
 echo "Topic:   ${TOPIC}"
-echo "This publishes 7 synthetic events (6 rule matches + 1 deliberate"
-echo "non-match) and will trigger real emails and some real Gemini calls."
+echo "This publishes 8 synthetic events (matching all 8 rules, several with"
+echo "intentional overlap) and will trigger real emails and some real Gemini calls."
 echo
 
 read -r -p "Type 'test' to continue: " CONFIRMATION
@@ -165,8 +165,10 @@ payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(in
 publish_event "MODIFY: SetIamPolicy with auditConfigs (expect: audit_config_changed, HIGH, +Gemini)" "${payload}"
 sleep "${DELAY_BETWEEN_EVENTS_SECONDS}"
 
-# --- 7. DELETE -- no shipped rule covers deletes; confirms the zero-match --
-# path works cleanly (evaluated, no findings, no email, no error).
+# --- 7. DELETE -- no rule 1-6 specifically covers deletes; this now exercises
+# the unclassified_admin_activity safety-net rule instead of a true zero-match
+# (that catch-all rule is what "no dark spots" coverage means in practice --
+# see config/rules.yaml rule 7's comment).
 payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(insert_id test-delete-sa)" '{
   protoPayload: {
     methodName: "google.iam.admin.v1.DeleteServiceAccount",
@@ -179,18 +181,42 @@ payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(in
   timestamp: $ts,
   insertId: $iid
 }')"
-publish_event "DELETE: DeleteServiceAccount (expect: NO MATCH -- zero findings, no email)" "${payload}"
+publish_event "DELETE: DeleteServiceAccount (expect: unclassified_admin_activity, LOW)" "${payload}"
+sleep "${DELAY_BETWEEN_EVENTS_SECONDS}"
+
+# --- 8. Federated (Workload Identity Federation) identity, no principalEmail
+# at all -- only principalSubject, matching how GCP actually logs a pure WIF
+# caller. Expected to match BOTH unclassified_admin_activity (an "insert" not
+# covered by rules 1-6) and federated_identity_action (rule 8, ai_analysis:
+# true).
+payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(insert_id test-wif-instance)" '{
+  protoPayload: {
+    methodName: "v1.compute.instances.insert",
+    resourceName: ("projects/" + $project + "/zones/asia-south1-a/instances/ci-deployed-vm"),
+    authenticationInfo: {
+      principalSubject: "principal://iam.googleapis.com/projects/123456789012/locations/global/workloadIdentityPools/github-pool/subject/repo:example-org/example-repo:ref:refs/heads/main"
+    },
+    requestMetadata: {callerIp: "203.0.113.201", callerSuppliedUserAgent: "google-api-go-client/0.5 GitHubActions"},
+    request: {name: "ci-deployed-vm", machineType: ("zones/asia-south1-a/machineTypes/e2-medium")}
+  },
+  resource: {type: "gce_instance", labels: {project_id: $project}},
+  severity: "NOTICE",
+  timestamp: $ts,
+  insertId: $iid
+}')"
+publish_event "WIF: compute.instances.insert via Workload Identity Federation (expect: unclassified_admin_activity + federated_identity_action, HIGH, +Gemini)" "${payload}"
 
 echo
-echo "All 7 events published. Wait ~60s (the org_policy/public_grant/"
-echo "audit_config events also call Gemini, which adds latency), then check:"
+echo "All 8 events published. Wait ~60s (4 events also call Gemini, which"
+echo "adds latency), then check:"
 echo
 echo "  gcloud functions logs read process-audit-log-gmail-alerts \\"
-echo "    --project=${PROJECT} --region=asia-south1 --gen2 --limit=50"
+echo "    --project=${PROJECT} --region=asia-south1 --gen2 --limit=200"
 echo
-echo "Expect 6x 'gmail_alert_sent' and 1x 'findings_evaluated' with"
-echo "finding_count: 0 and no send attempt (the DeleteServiceAccount event)."
-echo "Also expect 6 emails in your inbox with 6 different severity colors"
-echo "and rule titles, and 3 of them ('org_policy_modified',"
-echo "'public_iam_grant', 'audit_config_changed') should have an AI Analysis"
-echo "section populated in the email body."
+echo "Expect 8x 'findings_evaluated' and 12x 'gmail_alert_sent' total --"
+echo "several events now match more than one rule (rules 1-6 already overlap"
+echo "for events 5/6, and the unclassified_admin_activity safety net"
+echo "additionally overlaps events 4, 7, and 8 by design -- see rule 7's"
+echo "comment in config/rules.yaml). 4 findings get an AI Analysis section"
+echo "populated (org_policy_modified, public_iam_grant, audit_config_changed,"
+echo "federated_identity_action)."

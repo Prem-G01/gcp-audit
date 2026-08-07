@@ -116,6 +116,47 @@ def render_alert(
     return subject, html_body, text_body
 
 
+_MAX_NESTED_RENDER_DEPTH = 6
+
+
+def _render_nested_value(value: Any, depth: int = 0) -> str:
+    """Render a dict/list field value (e.g. a delegation chain or IAM binding
+    delta) as a nested HTML table/list instead of a Python repr string.
+
+    Depth-capped like the rule engine's own `_contains_value` -- these values
+    originate from audit log entries, which are attacker-influenced. Every
+    leaf still passes through html.escape().
+    """
+    if depth > _MAX_NESTED_RENDER_DEPTH:
+        return html.escape(str(value))
+    if isinstance(value, Mapping):
+        if not value:
+            return '<span style="color:#6b7280;">(empty)</span>'
+        rows = "".join(
+            "<tr>"
+            '<td style="padding:2px 8px 2px 0;font-family:Arial,sans-serif;font-size:12px;'
+            'font-weight:bold;color:#374151;vertical-align:top;white-space:nowrap;">'
+            f"{html.escape(str(k))}</td>"
+            '<td style="padding:2px 0;font-family:Arial,sans-serif;font-size:12px;'
+            f'color:#111827;vertical-align:top;">{_render_nested_value(v, depth + 1)}</td>'
+            "</tr>"
+            for k, v in value.items()
+        )
+        return (
+            '<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="border-left:2px solid #d1d5db;padding-left:6px;margin:2px 0;">{rows}</table>'
+        )
+    if isinstance(value, list | tuple):
+        if not value:
+            return '<span style="color:#6b7280;">(empty)</span>'
+        return "".join(
+            '<div style="padding:2px 0;border-bottom:1px dashed #e5e7eb;">'
+            f"&bull; {_render_nested_value(item, depth + 1)}</div>"
+            for item in value
+        )
+    return html.escape(str(value))
+
+
 def _render_field_rows(fields: list[tuple[str, Any]], tint: str) -> str:
     if not fields:
         return (
@@ -124,6 +165,9 @@ def _render_field_rows(fields: list[tuple[str, Any]], tint: str) -> str:
         )
     rows = []
     for key, value in fields:
+        value_html = (
+            _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else html.escape(str(value))
+        )
         rows.append(
             "<tr>"
             f'<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;'
@@ -132,7 +176,7 @@ def _render_field_rows(fields: list[tuple[str, Any]], tint: str) -> str:
             f"{html.escape(str(key))}</td>"
             '<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;'
             'font-family:Arial,sans-serif;font-size:13px;color:#111827;'
-            f'vertical-align:top;">{html.escape(str(value))}</td>'
+            f'vertical-align:top;">{value_html}</td>'
             "</tr>"
         )
     return "".join(rows)

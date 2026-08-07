@@ -12,6 +12,8 @@ RULE_IDS = [
     "firewall_open_to_internet",
     "public_iam_grant",
     "audit_config_changed",
+    "unclassified_admin_activity",
+    "federated_identity_action",
 ]
 
 
@@ -294,6 +296,8 @@ def test_evaluate_rules_never_raises_on_bad_rule_evaluation(tmp_path, monkeypatc
         ("firewall_open_internet.json", "firewall_open_to_internet"),
         ("public_iam_grant.json", "public_iam_grant"),
         ("audit_config_change.json", "audit_config_changed"),
+        ("unclassified_admin_activity.json", "unclassified_admin_activity"),
+        ("federated_identity_action.json", "federated_identity_action"),
     ],
 )
 def test_shipped_rule_matches_its_fixture(load_fixture, fixture_name, expected_rule_id) -> None:
@@ -311,6 +315,8 @@ def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
         "firewall_open_to_internet",
         "public_iam_grant",
         "audit_config_changed",
+        "unclassified_admin_activity",
+        "federated_identity_action",
     }
     assert covered == set(RULE_IDS)
     assert {rule.id for rule in engine._RULES} == set(RULE_IDS)
@@ -320,9 +326,11 @@ def test_requires_ai_analysis() -> None:
     assert engine.requires_ai_analysis("org_policy_modified") is True
     assert engine.requires_ai_analysis("public_iam_grant") is True
     assert engine.requires_ai_analysis("audit_config_changed") is True
+    assert engine.requires_ai_analysis("federated_identity_action") is True
     assert engine.requires_ai_analysis("service_account_key_created") is False
     assert engine.requires_ai_analysis("iam_policy_change") is False
     assert engine.requires_ai_analysis("firewall_open_to_internet") is False
+    assert engine.requires_ai_analysis("unclassified_admin_activity") is False
     assert engine.requires_ai_analysis("no_such_rule") is False
 
 
@@ -477,5 +485,5 @@ def test_console_url_template_unknown_placeholder(tmp_path) -> None:
 
 def test_real_config_rules_yaml_loads_without_raising() -> None:
     rules = engine.load_rules()
-    assert len(rules) == 6
+    assert len(rules) == 8
     assert {rule.id for rule in rules} == set(RULE_IDS)
