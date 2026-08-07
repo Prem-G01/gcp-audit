@@ -122,52 +122,18 @@ resource "google_cloud_run_v2_service_iam_member" "invoker" {
   member   = "serviceAccount:${var.runtime_service_account_email}"
 }
 
-resource "google_project_service_identity" "pubsub" {
-  provider = google-beta
-  project  = var.project_id
-  service  = "pubsub.googleapis.com"
-}
-
-# NOT a Terraform ordering bug -- the IAM member below already has an
-# implicit dependency on the service identity via the direct attribute
-# reference in service_account_id, so Terraform already sequences these
-# calls correctly. The 404 is a genuine GCP eventual-consistency race:
-# google_project_service_identity reports success (and returns an email)
-# before the resulting Google-managed service agent is reliably readable
-# by other APIs for IAM operations. depends_on wouldn't fix this -- it
-# only controls order, not wall-clock delay. This deliberate wait does.
+# REMOVED (was: google_project_service_identity.pubsub +
+# time_sleep.wait_for_pubsub_service_identity +
+# google_service_account_iam_member.pubsub_sa_token_creator).
 #
-# IMPORTANT: create_duration is NOT ForceNew in the hashicorp/time
-# provider -- bumping it alone (30s -> 90s) on an already-created
-# time_sleep is a no-op in practice: Terraform just records the new value
-# in state without re-running the sleep, because the sleep only happens
-# during the resource's *create* operation. That's what actually caused
-# the 90s attempt to still 404 -- it never re-waited at all, it hit the
-# exact same unaged service identity as the 30s attempt. `triggers` is
-# the documented mechanism for forcing a fresh create (and therefore a
-# fresh sleep) on a value change -- bump wait_attempt, not just
-# create_duration, any time this needs to actually take effect again.
-#
-# 90s WAS a genuine fresh wait (confirmed: the Cloud Build fix landed in
-# the same apply, proving the graph executed correctly this time) and
-# still wasn't enough -- this project's pubsub.googleapis.com service
-# agent may be provisioning for the first time, which some reports say
-# can take longer than routine re-reads. Bumped generously rather than
-# inching up a third time.
-resource "time_sleep" "wait_for_pubsub_service_identity" {
-  create_duration = "180s"
-
-  triggers = {
-    wait_attempt = "3"
-  }
-
-  depends_on = [google_project_service_identity.pubsub]
-}
-
-resource "google_service_account_iam_member" "pubsub_sa_token_creator" {
-  service_account_id = "projects/${var.project_id}/serviceAccounts/${google_project_service_identity.pubsub.email}"
-  role               = "roles/iam.serviceAccountTokenCreator"
-  member             = "serviceAccount:${google_project_service_identity.pubsub.email}"
-
-  depends_on = [time_sleep.wait_for_pubsub_service_identity]
-}
+# This chain granted roles/iam.serviceAccountTokenCreator to the Pub/Sub
+# service agent on itself, to support authenticated Pub/Sub push
+# requests. Verified against Google's own documentation: that grant is
+# only needed for service agents enabled on or before April 8, 2021 --
+# for any project created after that date (this one included), the role
+# is already granted by default. Three separate attempts to fix a
+# persistent 404 by waiting longer (30s, then 90s, then 180s, each
+# confirmed as a genuine fresh wait via the `triggers` mechanism) all
+# failed because there was nothing to wait for -- the underlying
+# assumption that this grant was necessary was wrong from the start, not
+# a timing problem. Removing it outright, not waiting longer for it.
