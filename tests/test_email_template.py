@@ -108,6 +108,37 @@ def test_html_injection_in_nested_value_is_escaped() -> None:
     assert "&lt;img src=x onerror=alert(1)&gt;" in html_body
 
 
+def test_fields_grouped_into_labeled_sections() -> None:
+    _subject, html_body, text_body = render_alert(
+        rule_id="R1",
+        severity="HIGH",
+        title="Title",
+        fields={
+            "Principal": "alice@example.com",
+            "Event Time (UTC)": "2026-08-05T12:00:00+00:00",
+            "Method": "SetIamPolicy",
+            "Caller IP": "203.0.113.10",
+            "Requested Policy": {"bindings": []},
+        },
+    )
+    # text-transform:uppercase is CSS-only -- the underlying escaped text stays
+    # title-case, so assert on that rather than the rendered-visual casing.
+    for section in ("Who</td>", "When</td>", "What</td>", "Where From</td>", "Change Detail</td>"):
+        assert section in html_body
+    for section in ("-- Who --", "-- When --", "-- What --", "-- Where From --", "-- Change Detail --"):
+        assert section in text_body
+
+
+def test_unmapped_field_label_still_renders_in_details_section() -> None:
+    _subject, html_body, text_body = render_alert(
+        rule_id="R1", severity="HIGH", title="Title", fields={"Some Future Field": "value123"}
+    )
+    assert "Details</td>" in html_body
+    assert "Some Future Field" in html_body
+    assert "value123" in html_body
+    assert "-- Details --" in text_body
+
+
 def test_empty_nested_dict_and_list_render_without_raising() -> None:
     _subject, html_body, _text_body = render_alert(
         rule_id="R1",

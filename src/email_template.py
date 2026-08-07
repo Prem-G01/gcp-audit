@@ -158,11 +158,6 @@ def _render_nested_value(value: Any, depth: int = 0) -> str:
 
 
 def _render_field_rows(fields: list[tuple[str, Any]], tint: str) -> str:
-    if not fields:
-        return (
-            '<tr><td style="padding:8px 12px;font-family:Arial,sans-serif;'
-            'font-size:13px;color:#6b7280;">No additional fields.</td></tr>'
-        )
     rows = []
     for key, value in fields:
         value_html = (
@@ -170,16 +165,89 @@ def _render_field_rows(fields: list[tuple[str, Any]], tint: str) -> str:
         )
         rows.append(
             "<tr>"
-            f'<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;'
+            f'<td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;'
             f'background-color:{tint};font-family:Arial,sans-serif;font-size:13px;'
             'font-weight:bold;color:#111827;vertical-align:top;width:35%;">'
             f"{html.escape(str(key))}</td>"
-            '<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;'
+            '<td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;'
             'font-family:Arial,sans-serif;font-size:13px;color:#111827;'
             f'vertical-align:top;">{value_html}</td>'
             "</tr>"
         )
     return "".join(rows)
+
+
+# Fixed label -> section lookup so the email groups related facts together
+# (who did it / when / what / where the call came from / what actually
+# changed) instead of one long flat table. A rule's `fields:` mapping in
+# config/rules.yaml is still just {label: dotted path} -- no schema change
+# there -- this grouping is purely a rendering concern, keyed on the exact
+# label text the shipped rules use.
+_FIELD_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "Who",
+        (
+            "Principal",
+            "Principal Subject",
+            "Principal Subject (Federated Identity)",
+            "Principal Email (if mapped)",
+            "Service Account Key Used",
+            "Impersonation/Delegation Chain",
+        ),
+    ),
+    ("When", ("Event Time (UTC)",)),
+    ("What", ("Method", "Resource", "Service Account", "Firewall Rule", "Project")),
+    ("Where From", ("Caller IP", "User Agent")),
+    (
+        "Change Detail",
+        (
+            "IAM Binding Changes (Delta)",
+            "Requested Policy",
+            "Requested Firewall Config",
+            "Requested Audit Config",
+            "Requested Change",
+        ),
+    ),
+)
+
+
+def _group_fields_into_sections(fields: list[tuple[str, Any]]) -> list[tuple[str, list[tuple[str, Any]]]]:
+    """Group (label, value) pairs by `_FIELD_SECTIONS`, preserving each field's
+    original position within its section. A label absent from that lookup
+    (a future or custom rule field) still renders -- it lands in a trailing
+    "Details" section rather than being silently dropped.
+    """
+    by_label = dict(fields)
+    used: set[str] = set()
+    sections: list[tuple[str, list[tuple[str, Any]]]] = []
+    for name, labels in _FIELD_SECTIONS:
+        rows = [(label, by_label[label]) for label in labels if label in by_label]
+        if rows:
+            sections.append((name, rows))
+            used.update(label for label, _ in rows)
+    leftover = [(label, value) for label, value in fields if label not in used]
+    if leftover:
+        sections.append(("Details", leftover))
+    return sections
+
+
+def _render_section(name: str, rows: list[tuple[str, Any]], tint: str) -> str:
+    header = (
+        '<tr><td colspan="2" style="padding:14px 12px 4px 12px;font-family:Arial,sans-serif;'
+        'font-size:11px;font-weight:bold;letter-spacing:0.6px;color:#6b7280;'
+        f'text-transform:uppercase;">{html.escape(name)}</td></tr>'
+    )
+    return header + _render_field_rows(rows, tint)
+
+
+def _render_sections(fields: list[tuple[str, Any]], tint: str) -> str:
+    sections = _group_fields_into_sections(fields)
+    if not sections:
+        return (
+            '<tr><td style="padding:8px 12px;font-family:Arial,sans-serif;'
+            'font-size:13px;color:#6b7280;">No additional fields.</td></tr>'
+        )
+    return "".join(_render_section(name, rows, tint) for name, rows in sections)
 
 
 def _render_ai_block(ai_analysis: str | None, accent: str, tint: str) -> str:
@@ -227,7 +295,7 @@ def _render_html(
     rule_id_escaped = html.escape(str(rule_id))
     generated_at_escaped = html.escape(generated_at)
 
-    fields_html = _render_field_rows(fields, tint)
+    fields_html = _render_sections(fields, tint)
     ai_block = _render_ai_block(ai_analysis, accent, tint)
     button_block = _render_console_button(console_url, accent)
 
@@ -268,10 +336,12 @@ def _render_text(
     generated_at: str,
 ) -> str:
     lines = [f"[{severity}] {title}", f"Rule: {rule_id}", ""]
-    if fields:
-        lines.append("Details:")
-        lines.extend(f"  {key}: {value}" for key, value in fields)
-        lines.append("")
+    sections = _group_fields_into_sections(fields)
+    if sections:
+        for name, rows in sections:
+            lines.append(f"-- {name} --")
+            lines.extend(f"  {key}: {value}" for key, value in rows)
+            lines.append("")
     else:
         lines.append("No additional fields.")
         lines.append("")
