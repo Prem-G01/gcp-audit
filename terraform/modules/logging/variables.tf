@@ -35,3 +35,17 @@ variable "filter" {
   type        = string
   default     = "logName:\"/logs/cloudaudit.googleapis.com%2Factivity\""
 }
+
+variable "project_sink_enabled" {
+  description = <<-EOT
+    Whether to create a project-scoped sink for destination_project_id's
+    own Admin Activity logs. This is what makes the pipeline fire on real
+    activity in "project_only" mode -- without it (or the org sink), no
+    real Cloud Audit Log entry ever reaches the Pub/Sub topic at all.
+    Deliberately mutually exclusive with `enabled` (the org sink) at the
+    root module's call site: running both at once would double-publish
+    every event inside this project, causing duplicate alerts.
+  EOT
+  type        = bool
+  default     = false
+}

@@ -34,3 +34,8 @@ output "org_sink_writer_identity" {
   description = "null unless deployment_mode = \"full\"."
   value       = module.logging.sink_writer_identity
 }
+
+output "project_sink_writer_identity" {
+  description = "null once deployment_mode = \"full\" (the org sink takes over)."
+  value       = module.logging.project_sink_writer_identity
+}

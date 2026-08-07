@@ -35,6 +35,7 @@ module "logging" {
   source = "./modules/logging"
 
   enabled                = var.deployment_mode == "full"
+  project_sink_enabled   = var.deployment_mode != "full"
   org_id                 = var.org_id
   destination_project_id = var.project_id
   destination_topic_name = module.pubsub.main_topic_name
