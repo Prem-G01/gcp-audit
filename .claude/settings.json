@@ -33,7 +33,8 @@
       "Bash(rm -rf terraform/.terraform)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:registry.terraform.io)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git fetch *)"
     ]
   }
 }

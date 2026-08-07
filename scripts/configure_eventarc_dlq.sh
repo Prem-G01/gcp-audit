@@ -43,9 +43,13 @@ echo "Discovering the Eventarc-managed trigger for ${FUNCTION_NAME}..."
 # Cloud Functions v2 names its auto-created trigger "<function>-<random-suffix>"
 # (NOT "<function>-<region>" -- confirmed wrong the hard way against a real
 # deployment). Filter by destination instead of guessing the name pattern.
+# The destination field is `destination.cloudFunction`, holding the FULL
+# resource path (projects/P/locations/L/functions/NAME), not a bare name
+# under `destination.cloudRun.service` -- also confirmed wrong the hard way
+# (that field doesn't exist on a function-type trigger's destination).
 TRIGGER_NAME="$(gcloud eventarc triggers list \
   --project="${PROJECT}" --location="${REGION}" \
-  --filter="destination.cloudRun.service=${FUNCTION_NAME}" \
+  --filter="destination.cloudFunction:functions/${FUNCTION_NAME}" \
   --format="value(name)")"
 
 if [[ -z "${TRIGGER_NAME}" ]]; then
