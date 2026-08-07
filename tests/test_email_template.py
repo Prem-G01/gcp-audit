@@ -9,9 +9,16 @@ from src.email_template import (
     _FALLBACK_ACCENT,
     _FALLBACK_TINT,
     _alert_id,
+    _business_impact,
     _detect_indicators,
+    _firewall_config_detail,
+    _firewall_remediation_commands,
     _format_timestamp,
     _is_rfc1918,
+    _plain_english_title,
+    _resource_name_segment,
+    _sa_key_remediation_commands,
+    _sa_key_risk_notes,
     _select_template,
     _severity_colors,
     _severity_style,
@@ -167,14 +174,54 @@ def test_empty_nested_dict_and_list_render_without_raising() -> None:
 
 
 def test_select_template_rule_id_overrides_beat_severity() -> None:
-    assert _select_template("CRITICAL", "public_iam_grant") == "B"
-    assert _select_template("MEDIUM", "public_iam_grant") == "B"  # override wins even at low severity
-    assert _select_template("LOW", "firewall_open_to_internet") == "A"
-    assert _select_template("LOW", "service_account_key_created") == "A"
+    # Overrides win even at a severity that would otherwise route elsewhere.
+    assert _select_template("MEDIUM", "public_iam_grant") == "D"
+    assert _select_template("MEDIUM", "billing_account_changed") == "D"
+    assert _select_template("LOW", "firewall_open_to_internet") == "E"
+    assert _select_template("LOW", "service_account_key_created") == "E"
+    assert _select_template("LOW", "iam_policy_change") == "B"
+    assert _select_template("LOW", "audit_config_changed") == "B"
+    assert _select_template("LOW", "org_policy_modified") == "B"
+    assert _select_template("LOW", "federated_identity_action") == "B"
+    assert _select_template("LOW", "project_created") == "A"
+
+
+def test_select_template_all_ten_shipped_rules() -> None:
+    """Every real rule id in config/rules.yaml maps to a real template --
+    catches drift if a rule is renamed/added without updating this module.
+    """
+    expected = {
+        "iam_policy_change": "B",
+        "service_account_key_created": "E",
+        "org_policy_modified": "B",
+        "firewall_open_to_internet": "E",
+        "public_iam_grant": "D",
+        "audit_config_changed": "B",
+        "unclassified_admin_activity": "C",
+        "federated_identity_action": "B",
+        "project_created": "A",
+        "billing_account_changed": "D",
+    }
+    severities = {
+        "iam_policy_change": "HIGH",
+        "service_account_key_created": "HIGH",
+        "org_policy_modified": "HIGH",
+        "firewall_open_to_internet": "CRITICAL",
+        "public_iam_grant": "CRITICAL",
+        "audit_config_changed": "HIGH",
+        "unclassified_admin_activity": "LOW",
+        "federated_identity_action": "HIGH",
+        "project_created": "HIGH",
+        "billing_account_changed": "CRITICAL",
+    }
+    for rule_id, template in expected.items():
+        assert _select_template(severities[rule_id], rule_id) == template, rule_id
 
 
 def test_select_template_severity_fallback() -> None:
-    assert _select_template("CRITICAL", "some_other_rule") == "B"
+    # Unmapped rule ids: CRITICAL never silently lands on the plainest
+    # template (C) -- it always escalates to D, the executive layout.
+    assert _select_template("CRITICAL", "some_other_rule") == "D"
     assert _select_template("HIGH", "some_other_rule") == "A"
     assert _select_template("MEDIUM", "some_other_rule") == "C"
     assert _select_template("LOW", "some_other_rule") == "C"
@@ -277,7 +324,7 @@ def test_detect_indicators_empty_for_no_fields() -> None:
 
 def test_template_a_renders_dark_executive_header() -> None:
     _subject, html_body, _text_body = render_alert(
-        rule_id="firewall_open_to_internet", severity="LOW", title="Title", fields={}
+        rule_id="project_created", severity="HIGH", title="Title", fields={}
     )
     assert "#0f172a" in html_body
     assert "GCP AUDIT PLATFORM" in html_body
@@ -285,8 +332,8 @@ def test_template_a_renders_dark_executive_header() -> None:
 
 def test_template_b_renders_soc_header_and_ioc_box() -> None:
     _subject, html_body, _text_body = render_alert(
-        rule_id="public_iam_grant",
-        severity="CRITICAL",
+        rule_id="iam_policy_change",
+        severity="HIGH",
         title="Title",
         fields={"Requested Policy": {"bindings": [{"members": ["allUsers"]}]}},
     )
@@ -296,12 +343,11 @@ def test_template_b_renders_soc_header_and_ioc_box() -> None:
 
 def test_template_b_does_not_drop_change_detail_or_unmapped_fields() -> None:
     """Regression test: Template B originally only rendered Who/When and
-    What/Where From, silently dropping Change Detail and any unmapped field
-    -- exactly the data a CRITICAL/public_iam_grant alert most needs.
+    What/Where From, silently dropping Change Detail and any unmapped field.
     """
     _subject, html_body, _text_body = render_alert(
-        rule_id="public_iam_grant",
-        severity="CRITICAL",
+        rule_id="audit_config_changed",
+        severity="HIGH",
         title="Title",
         fields={
             "Requested Policy": {"bindings": [{"role": "roles/storage.objectViewer", "members": ["allUsers"]}]},
@@ -340,8 +386,15 @@ def test_console_button_omitted_when_url_missing() -> None:
     assert "Open Cloud Console" not in html_body
 
 
-def test_all_three_templates_escape_html_injection() -> None:
-    for severity, rule_id in (("HIGH", "firewall_open_to_internet"), ("CRITICAL", "public_iam_grant"), ("LOW", "x")):
+def test_all_five_templates_escape_html_injection() -> None:
+    cases = (
+        ("HIGH", "project_created"),  # A
+        ("HIGH", "iam_policy_change"),  # B
+        ("LOW", "x"),  # C
+        ("CRITICAL", "public_iam_grant"),  # D
+        ("CRITICAL", "firewall_open_to_internet"),  # E
+    )
+    for severity, rule_id in cases:
         _subject, html_body, _text_body = render_alert(
             rule_id=rule_id,
             severity=severity,
@@ -351,3 +404,146 @@ def test_all_three_templates_escape_html_injection() -> None:
         )
         assert "<script>alert(1)</script>" not in html_body
         assert "<img src=x onerror=alert(1)>" not in html_body
+
+
+# --- Template D: Executive Summary (public_iam_grant, billing_account_changed) --
+
+
+def test_plain_english_title_known_rule() -> None:
+    assert _plain_english_title("public_iam_grant", "raw title") == (
+        "Public internet access granted to a cloud resource"
+    )
+
+
+def test_plain_english_title_falls_back_to_real_title_for_unknown_rule() -> None:
+    assert _plain_english_title("some_future_rule", "The Real Title") == "The Real Title"
+
+
+def test_business_impact_known_vs_default() -> None:
+    assert _business_impact("public_iam_grant") == (
+        "Data may be publicly exposed",
+        "Possible compliance violation",
+        "Review access immediately",
+    )
+    assert _business_impact("unmapped_rule") == (
+        "Security-relevant change",
+        "May affect compliance posture",
+        "Review recommended",
+    )
+
+
+def test_template_d_renders_plain_english_title_and_business_impact() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="public_iam_grant",
+        severity="CRITICAL",
+        title="raw internal title",
+        fields={"Principal": "alice@example.com", "Resource": "projects/_/buckets/x", "Project": "prj-1"},
+    )
+    assert "Public internet access granted to a cloud resource" in html_body
+    assert "Data may be publicly exposed" in html_body
+    assert "alice@example.com made a change to projects/_/buckets/x in project prj-1" in html_body
+
+
+def test_template_d_used_for_billing_account_changed() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="billing_account_changed", severity="CRITICAL", title="Title", fields={}
+    )
+    assert "Billing account linked or modified" in html_body
+
+
+# --- Template E: Engineer Detail (firewall_open_to_internet, service_account_key_created) --
+
+
+def test_resource_name_segment() -> None:
+    assert _resource_name_segment("projects/p/global/firewalls/allow-all", "firewalls") == "allow-all"
+    assert _resource_name_segment("projects/p/serviceAccounts/sa@p.iam.gserviceaccount.com/keys/abc123", "keys") == (
+        "abc123"
+    )
+    resource = "projects/p/serviceAccounts/sa@p.iam.gserviceaccount.com/keys/abc123"
+    assert _resource_name_segment(resource, "serviceAccounts") == "sa@p.iam.gserviceaccount.com"
+    assert _resource_name_segment("no/marker/here", "firewalls") is None
+    assert _resource_name_segment(None, "firewalls") is None
+
+
+def test_firewall_remediation_commands_derived_from_real_fields() -> None:
+    commands = _firewall_remediation_commands(
+        [("Firewall Rule", "projects/prj-1/global/firewalls/allow-all-ingress"), ("Project", "prj-1")]
+    )
+    assert len(commands) == 3
+    assert any("allow-all-ingress" in cmd and "--project=prj-1" in cmd for _label, cmd in commands)
+    assert any(cmd.startswith("gcloud compute firewall-rules update") and "--disabled" in cmd for _l, cmd in commands)
+
+
+def test_firewall_remediation_commands_empty_without_real_data() -> None:
+    assert _firewall_remediation_commands([]) == []
+
+
+def test_sa_key_remediation_commands_derived_from_real_fields() -> None:
+    resource = "projects/prj-1/serviceAccounts/svc@prj-1.iam.gserviceaccount.com/keys/deadbeef"
+    commands = _sa_key_remediation_commands([("Service Account", resource), ("Project", "prj-1")])
+    assert any("deadbeef" in cmd for _label, cmd in commands)
+    assert any("svc@prj-1.iam.gserviceaccount.com" in cmd for _label, cmd in commands)
+
+
+def test_sa_key_remediation_commands_empty_without_sa_email() -> None:
+    assert _sa_key_remediation_commands([]) == []
+
+
+def test_firewall_config_detail_extracts_real_values() -> None:
+    detail = _firewall_config_detail(
+        [("Requested Firewall Config", {"sourceRanges": ["0.0.0.0/0"], "allowed": [{"IPProtocol": "tcp"}]})]
+    )
+    assert detail == {"source_ranges": ["0.0.0.0/0"], "allowed": [{"IPProtocol": "tcp"}], "target_tags": None}
+
+
+def test_firewall_config_detail_none_when_absent_or_wrong_shape() -> None:
+    assert _firewall_config_detail([]) is None
+    assert _firewall_config_detail([("Requested Firewall Config", "not a dict")]) is None
+
+
+def test_sa_key_risk_notes_flags_non_private_ip() -> None:
+    notes = _sa_key_risk_notes([("Caller IP", "203.0.113.10")])
+    assert any("203.0.113.10" in n for n in notes)
+
+
+def test_sa_key_risk_notes_always_has_baseline_note() -> None:
+    notes = _sa_key_risk_notes([])
+    assert len(notes) == 1
+    assert "long-lived credentials" in notes[0]
+
+
+def test_template_e_firewall_shows_remediation_commands() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="firewall_open_to_internet",
+        severity="CRITICAL",
+        title="Title",
+        fields={
+            "Firewall Rule": "projects/prj-1/global/firewalls/allow-all",
+            "Project": "prj-1",
+            "Requested Firewall Config": {"sourceRanges": ["0.0.0.0/0"]},
+        },
+    )
+    assert "Remediation Commands" in html_body
+    assert "gcloud compute firewall-rules" in html_body
+    assert "Firewall Configuration" in html_body
+
+
+def test_template_e_sa_key_shows_key_risk_notes() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="service_account_key_created",
+        severity="HIGH",
+        title="Title",
+        fields={
+            "Service Account": "projects/prj-1/serviceAccounts/svc@prj-1.iam.gserviceaccount.com/keys/abc",
+            "Project": "prj-1",
+        },
+    )
+    assert "Key Risk Notes" in html_body
+    assert "gcloud iam service-accounts keys" in html_body
+
+
+def test_template_e_never_shows_firewall_section_for_sa_key_rule() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="service_account_key_created", severity="HIGH", title="Title", fields={}
+    )
+    assert "Firewall Configuration" not in html_body

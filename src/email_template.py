@@ -1,18 +1,30 @@
 """Renders Gmail alert emails (subject, HTML body, plain-text body) for findings.
 
-Three visually distinct HTML layouts are selected per finding (see
-`_select_template`): "A" (Executive Dark), "B" (Security Operations), and "C"
-(Clean Enterprise). All layouts use inline CSS and <table> markup only (no
-<style> blocks, no flexbox/grid) for Outlook/Gmail rendering compatibility.
-Every value that originates from an audit log entry is attacker-influenced
-and is passed through html.escape() before reaching the HTML template.
+Five visually distinct HTML layouts are selected per finding (see
+`_select_template`, keyed on the real rule ids in config/rules.yaml):
+"A" (Executive Dark, clean HIGH default), "B" (Security Operations, IOC-
+focused), "C" (Clean Enterprise, default), "D" (Executive Summary, plain-
+English framing for public_iam_grant/billing_account_changed), and "E"
+(Engineer Detail, technical breakdown + remediation commands for
+firewall_open_to_internet/service_account_key_created). All layouts use
+inline CSS and <table> markup only (no <style> blocks, no flexbox/grid) --
+CLAUDE.md forbids <style> here for Outlook/Gmail rendering compatibility,
+which also means there's no sender-controlled dark-mode support: real
+email dark-mode comes from clients auto-inverting light content, not
+`@media (prefers-color-scheme: dark)` (most clients that matter here,
+Outlook desktop included, ignore it anyway). Every value that originates
+from an audit log entry is attacker-influenced and is passed through
+html.escape() before reaching the HTML template.
 
 Severity colours are NOT hardcoded here -- they come from
 config/routing.yaml's severity_styles, per this repo's "no logic in Python"
 rule for styling. Anything this module can't honestly derive from real
-finding/field data (a fabricated risk score, a guessed AI model name, a
-"revoke access" button with nothing behind it) is deliberately omitted
-rather than invented.
+finding/field data (a fabricated risk score, a fake compliance-framework
+PASS/FAIL badge, a guessed AI model name, a "revoke access" button with
+nothing behind it) is deliberately omitted rather than invented.
+Remediation commands (Template E) are built only from this finding's own
+resource name/project fields -- never a placeholder value that wasn't
+actually present.
 """
 
 from __future__ import annotations
@@ -369,24 +381,183 @@ def _iam_console_url(fields: list[tuple[str, Any]]) -> str | None:
     return f"https://console.cloud.google.com/iam-admin/iam?project={quote(project_id, safe='')}"
 
 
-_TEMPLATE_B_RULE_IDS = frozenset({"public_iam_grant"})
-_TEMPLATE_A_RULE_IDS = frozenset({"firewall_open_to_internet", "service_account_key_created"})
+# Real rule ids from config/rules.yaml (all 10 shipped rules). Rule-specific
+# overrides win over the severity-based fallback -- e.g. public_iam_grant
+# always renders as "D" even though it happens to also be CRITICAL.
+_TEMPLATE_D_RULE_IDS = frozenset({"public_iam_grant", "billing_account_changed"})
+_TEMPLATE_E_RULE_IDS = frozenset({"firewall_open_to_internet", "service_account_key_created"})
+_TEMPLATE_B_RULE_IDS = frozenset(
+    {"iam_policy_change", "audit_config_changed", "org_policy_modified", "federated_identity_action"}
+)
+_TEMPLATE_A_RULE_IDS = frozenset({"project_created"})
 
 
 def _select_template(severity: str, rule_id: str) -> str:
-    """Pick which of the three layouts to render. Rule-specific overrides win
-    over the severity-based fallback (e.g. public_iam_grant always renders as
-    "B" even though it happens to also be CRITICAL).
+    """Pick which of the five layouts to render.
+
+    D = executive summary (public grants, billing changes -- board-relevant).
+    E = engineer detail + remediation commands (firewall, SA keys -- rules
+        with a concrete, derivable fix).
+    B = security-operations IOC view (policy/config/identity changes).
+    A = clean HIGH-severity default (project_created and any future HIGH
+        rule not otherwise mapped).
+    C = clean default for everything else (LOW/MEDIUM, unclassified,
+        and any future CRITICAL rule not otherwise mapped -- unlike a
+        severity-only fallback, this never silently drops a CRITICAL
+        finding into the plainest template; it only reaches C if nothing
+        more specific, including the CRITICAL check below, applies).
     """
+    if rule_id in _TEMPLATE_D_RULE_IDS:
+        return "D"
+    if rule_id in _TEMPLATE_E_RULE_IDS:
+        return "E"
     if rule_id in _TEMPLATE_B_RULE_IDS:
         return "B"
     if rule_id in _TEMPLATE_A_RULE_IDS:
         return "A"
     if severity == "CRITICAL":
-        return "B"
+        return "D"
     if severity == "HIGH":
         return "A"
     return "C"
+
+
+# -----------------------------------------------------------------------
+# Honest, fixed lookups for executive-facing copy -- human-friendly
+# rewording of a KNOWN rule's real title/nature, never a computed score
+# or invented category. Any rule not in these maps falls back to the
+# finding's own real `title`/a generic label, rather than guessing.
+# -----------------------------------------------------------------------
+
+_PLAIN_ENGLISH_TITLES: dict[str, str] = {
+    "public_iam_grant": "Public internet access granted to a cloud resource",
+    "billing_account_changed": "Billing account linked or modified",
+    "org_policy_modified": "Organization-wide security policy modified",
+    "firewall_open_to_internet": "Network firewall opened to the internet",
+    "service_account_key_created": "Service account credentials created",
+    "iam_policy_change": "Access permissions changed",
+    "audit_config_changed": "Audit logging configuration changed",
+    "federated_identity_action": "External identity performed a privileged action",
+    "project_created": "New GCP project created",
+    "unclassified_admin_activity": "Administrative activity detected",
+}
+
+
+def _plain_english_title(rule_id: str, title: str) -> str:
+    return _PLAIN_ENGLISH_TITLES.get(rule_id, title)
+
+
+_BUSINESS_IMPACT: dict[str, tuple[str, str, str]] = {
+    "public_iam_grant": (
+        "Data may be publicly exposed",
+        "Possible compliance violation",
+        "Review access immediately",
+    ),
+    "billing_account_changed": (
+        "Billing destination changed",
+        "Possible unexpected charges",
+        "Verify this was authorized",
+    ),
+}
+_DEFAULT_BUSINESS_IMPACT: tuple[str, str, str] = (
+    "Security-relevant change",
+    "May affect compliance posture",
+    "Review recommended",
+)
+
+
+def _business_impact(rule_id: str) -> tuple[str, str, str]:
+    return _BUSINESS_IMPACT.get(rule_id, _DEFAULT_BUSINESS_IMPACT)
+
+
+# -----------------------------------------------------------------------
+# Remediation commands -- built ONLY from this finding's own real field
+# values (the resource's actual name/project). If the expected value
+# isn't present, no command is fabricated -- the section just omits that
+# step rather than showing a placeholder.
+# -----------------------------------------------------------------------
+
+
+def _resource_name_segment(resource_name: Any, marker: str) -> str | None:
+    """Pull the path segment right after `marker` out of a GCP resource
+    name, e.g. 'projects/P/global/firewalls/NAME' with marker="firewalls"
+    -> "NAME". None if the marker isn't present.
+    """
+    if not isinstance(resource_name, str):
+        return None
+    parts = resource_name.split("/")
+    if marker in parts:
+        idx = parts.index(marker)
+        if idx + 1 < len(parts):
+            return parts[idx + 1]
+    return None
+
+
+def _firewall_remediation_commands(fields: list[tuple[str, Any]]) -> list[tuple[str, str]]:
+    resource_name = _field_value(fields, "Firewall Rule") or _field_value(fields, "Resource")
+    project_id = _field_value(fields, "Project")
+    firewall_name = _resource_name_segment(resource_name, "firewalls")
+    if not firewall_name or not isinstance(project_id, str):
+        return []
+    flag = f" --project={project_id}"
+    return [
+        ("Disable the rule immediately", f"gcloud compute firewall-rules update {firewall_name}{flag} --disabled"),
+        ("Review its full configuration", f"gcloud compute firewall-rules describe {firewall_name}{flag}"),
+        ("Delete it once confirmed unneeded", f"gcloud compute firewall-rules delete {firewall_name}{flag}"),
+    ]
+
+
+def _sa_key_remediation_commands(fields: list[tuple[str, Any]]) -> list[tuple[str, str]]:
+    resource_name = _field_value(fields, "Service Account") or _field_value(fields, "Resource")
+    project_id = _field_value(fields, "Project")
+    sa_email = _resource_name_segment(resource_name, "serviceAccounts")
+    key_id = _resource_name_segment(resource_name, "keys")
+    if not sa_email:
+        return []
+    flag = f" --project={project_id}" if isinstance(project_id, str) else ""
+    list_cmd = f"gcloud iam service-accounts keys list --iam-account={sa_email}{flag}"
+    commands = [("List all keys on this service account", list_cmd)]
+    if key_id:
+        delete_cmd = f"gcloud iam service-accounts keys delete {key_id} --iam-account={sa_email}{flag}"
+        commands.append(("Delete this specific key", delete_cmd))
+    return commands
+
+
+def _firewall_config_detail(fields: list[tuple[str, Any]]) -> dict[str, Any] | None:
+    """Real source ranges / allowed ports / target tags from the requested
+    firewall config, when present and shaped as a dict. None otherwise --
+    never fabricates a value that wasn't actually in the audit log entry.
+    """
+    value = _field_value(fields, "Requested Firewall Config")
+    if not isinstance(value, Mapping):
+        return None
+    return {
+        "source_ranges": value.get("sourceRanges"),
+        "allowed": value.get("allowed"),
+        "target_tags": value.get("targetTags"),
+    }
+
+
+def _sa_key_risk_notes(fields: list[tuple[str, Any]]) -> list[str]:
+    notes = [
+        "User-managed keys are long-lived credentials -- prefer Workload Identity "
+        "or short-lived tokens where possible."
+    ]
+    caller_ip = _field_value(fields, "Caller IP")
+    if isinstance(caller_ip, str) and caller_ip and not _is_rfc1918(caller_ip):
+        notes.append(f"Created from a non-private IP ({caller_ip}) -- confirm this was an expected origin.")
+    return notes
+
+
+def _render_code_block(label: str, command: str) -> str:
+    return (
+        '<tr><td style="padding:4px 0;">'
+        f'<div style="font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;margin-bottom:3px;">'
+        f"{html.escape(label)}</div>"
+        '<div style="font-family:monospace;font-size:13px;color:#93c5fd;background-color:#0f172a;'
+        f'padding:8px 12px;border-radius:5px;overflow-wrap:break-word;">{html.escape(command)}</div>'
+        "</td></tr>"
+    )
 
 
 def _detect_indicators(fields: list[tuple[str, Any]]) -> list[tuple[str, str]]:
@@ -455,7 +626,13 @@ def render_alert(
         f"{_strip_header_injection(title)} - {_strip_header_injection(rule_id)}"
     )
 
-    renderer = {"A": _render_template_a, "B": _render_template_b, "C": _render_template_c}[template]
+    renderer = {
+        "A": _render_template_a,
+        "B": _render_template_b,
+        "C": _render_template_c,
+        "D": _render_template_d,
+        "E": _render_template_e,
+    }[template]
     html_body = renderer(
         severity=severity,
         accent=accent,
@@ -868,6 +1045,313 @@ def _render_template_c(
         "GCP Audit Platform &middot; Automated security alert<br>Do not reply</td>"
         '<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
         f"Alert: {html.escape(alert_id)}<br>Rule: {rule_id_e}</td>"
+        "</tr></table></td></tr>"
+        "</table>"
+    )
+
+
+# -----------------------------------------------------------------------
+# Template D -- Executive Summary. public_iam_grant, billing_account_changed.
+# Plain-English framing for a non-technical, board-relevant audience.
+# -----------------------------------------------------------------------
+
+
+def _render_template_d(
+    *,
+    severity: str,
+    accent: str,
+    tint: str,
+    title: str,
+    rule_id: str,
+    fields: list[tuple[str, Any]],
+    ai_analysis: str | None,
+    console_url: str | None,
+    generated_at: str,
+    alert_id: str,
+) -> str:
+    del tint
+    plain_title = html.escape(_plain_english_title(rule_id, title))
+    rule_id_e = html.escape(str(rule_id))
+
+    principal = (
+        _field_value(fields, "Principal")
+        or _field_value(fields, "Principal Subject")
+        or _field_value(fields, "Principal Subject (Federated Identity)")
+    )
+    resource = (
+        _field_value(fields, "Resource")
+        or _field_value(fields, "Firewall Rule")
+        or _field_value(fields, "Service Account")
+        or _field_value(fields, "New Project Resource")
+    )
+    project = _field_value(fields, "Project")
+    summary_parts = [f"{principal} made a change" if principal else "A change was made"]
+    if resource:
+        summary_parts.append(f"to {resource}")
+    if project:
+        summary_parts.append(f"in project {project}")
+    summary_e = html.escape(" ".join(summary_parts) + ".")
+
+    impact_html = "".join(
+        '<td width="33%" style="padding:12px;vertical-align:top;">'
+        f'<div style="width:8px;height:8px;border-radius:50%;background-color:{accent};margin-bottom:6px;"></div>'
+        '<div style="font-family:Arial,sans-serif;font-size:12px;color:#334155;line-height:1.4;">'
+        f"{html.escape(item)}</div>"
+        "</td>"
+        for item in _business_impact(rule_id)
+    )
+
+    sections = _group_fields_into_sections(fields)
+    cards = "".join(_render_info_card(name, rows, accent=accent) for name, rows in sections if name != "Change Detail")
+    cards_html = f'<tr><td style="padding:16px 20px 0 20px;">{cards}</td></tr>' if cards else ""
+
+    change_rows = next((rows for name, rows in sections if name == "Change Detail"), None)
+    change_html = ""
+    if change_rows:
+        change_html = (
+            '<tr><td style="padding:0 20px 16px 20px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="border:1px solid #fed7aa;border-radius:6px;background-color:#fff7ed;">'
+            '<tr><td colspan="2" style="padding:10px 12px 2px 12px;font-family:Arial,sans-serif;'
+            "font-size:10px;font-weight:bold;letter-spacing:0.08em;color:#c2410c;"
+            'text-transform:uppercase;">Change Detail</td></tr>'
+            f'{_render_field_rows(change_rows, "#ffedd5")}</table></td></tr>'
+        )
+
+    ai_html = ""
+    if ai_analysis:
+        ai_html = (
+            '<tr><td style="padding:0 20px 16px 20px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="border:1px solid #bfdbfe;border-radius:6px;background-color:#eff6ff;">'
+            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
+            'color:#0f172a;line-height:1.75;">'
+            '<strong style="display:block;margin-bottom:6px;color:#1e40af;">AI Analysis</strong>'
+            f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
+        )
+
+    buttons_html = _render_cta_row(
+        [
+            ("Open Cloud Console", console_url, "#0f172a", "#ffffff", "#0f172a"),
+            ("View Audit Log", _iam_console_url(fields), "#ffffff", "#3b82f6", "#3b82f6"),
+        ]
+    )
+
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;border-radius:10px;'
+        'overflow:hidden;">'
+        f'<tr><td style="background-color:{accent};height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>'
+        '<tr><td style="background-color:#0f172a;padding:16px 20px;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        '<td style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;letter-spacing:1px;'
+        'color:#e2e8f0;">GCP AUDIT PLATFORM</td>'
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        f"Alert: {html.escape(alert_id)} &middot; {html.escape(generated_at)}</td></tr></table></td></tr>"
+        '<tr><td style="padding:24px 20px 20px 20px;">'
+        f"{_render_severity_badge(severity, accent)}"
+        f'<div style="font-family:Arial,sans-serif;font-size:22px;font-weight:bold;color:#0f172a;'
+        f'margin-top:10px;">{plain_title}</div>'
+        '<div style="font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;margin-top:4px;">'
+        f"Rule: {rule_id_e}</div>"
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;'
+        f'border-left:3px solid {accent};background-color:#f8fafc;">'
+        '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;color:#334155;'
+        f'line-height:1.6;">{summary_e}</td></tr></table>'
+        "</td></tr>"
+        '<tr><td style="padding:0 20px 16px 20px;">'
+        '<div style="font-family:Arial,sans-serif;font-size:10px;font-weight:bold;letter-spacing:0.08em;'
+        'color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">Business Impact</div>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>{impact_html}'
+        "</tr></table></td></tr>"
+        f"{cards_html}{change_html}{ai_html}{buttons_html}"
+        '<tr><td style="padding:14px 20px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        '<td style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        "GCP Audit Platform &middot; Automated &middot; Do not reply</td>"
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:{accent};'
+        f'font-weight:bold;">{html.escape(str(severity))}</td>'
+        "</tr></table></td></tr>"
+        "</table>"
+    )
+
+
+# -----------------------------------------------------------------------
+# Template E -- Engineer Detail. firewall_open_to_internet,
+# service_account_key_created. Technical detail + copy-pasteable
+# remediation commands derived from this finding's own real fields.
+# -----------------------------------------------------------------------
+
+
+def _render_template_e(
+    *,
+    severity: str,
+    accent: str,
+    tint: str,
+    title: str,
+    rule_id: str,
+    fields: list[tuple[str, Any]],
+    ai_analysis: str | None,
+    console_url: str | None,
+    generated_at: str,
+    alert_id: str,
+) -> str:
+    title_e = html.escape(str(title))
+    rule_id_e = html.escape(str(rule_id))
+
+    sections = _group_fields_into_sections(fields)
+    detail_rows = [row for name, rows in sections if name != "Change Detail" for row in rows]
+    zebra_rows = []
+    for idx, (key, value) in enumerate(detail_rows):
+        bg = "#ffffff" if idx % 2 == 0 else "#f8fafc"
+        value_html = (
+            _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else html.escape(str(value))
+        )
+        zebra_rows.append(
+            "<tr>"
+            f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
+            'font-family:Arial,sans-serif;font-size:13px;font-weight:bold;color:#0f172a;width:35%;">'
+            f"{html.escape(str(key))}</td>"
+            f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
+            f'font-family:monospace;font-size:12px;color:#0f172a;">{value_html}</td>'
+            "</tr>"
+        )
+    zebra_html = ""
+    if zebra_rows:
+        zebra_html = (
+            '<tr><td style="padding:16px 20px 0 20px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="border:1px solid #e2e8f0;">' + "".join(zebra_rows) + "</table></td></tr>"
+        )
+
+    firewall_html = ""
+    if rule_id == "firewall_open_to_internet":
+        detail = _firewall_config_detail(fields)
+        if detail:
+            firewall_rows: list[tuple[str, Any]] = []
+            if detail["source_ranges"]:
+                firewall_rows.append(("Source ranges", detail["source_ranges"]))
+            if detail["allowed"]:
+                firewall_rows.append(("Allowed", detail["allowed"]))
+            if detail["target_tags"]:
+                firewall_rows.append(("Target tags", detail["target_tags"]))
+            if firewall_rows:
+                firewall_html = (
+                    '<tr><td style="padding:16px 20px 0 20px;">'
+                    '<div style="font-family:Arial,sans-serif;font-size:10px;font-weight:bold;'
+                    'letter-spacing:0.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">'
+                    "Firewall Configuration</div>"
+                    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+                    f'style="border:1px solid #e2e8f0;">{_render_field_rows(firewall_rows, "#f8fafc")}</table>'
+                    "</td></tr>"
+                )
+
+    sa_key_html = ""
+    if rule_id == "service_account_key_created":
+        notes = _sa_key_risk_notes(fields)
+        if notes:
+            notes_rows = "".join(
+                f'<div style="padding:4px 0;font-family:Arial,sans-serif;font-size:12px;color:#334155;'
+                f'line-height:1.5;">&bull; {html.escape(n)}</div>'
+                for n in notes
+            )
+            sa_key_html = (
+                '<tr><td style="padding:16px 20px 0 20px;">'
+                '<div style="font-family:Arial,sans-serif;font-size:10px;font-weight:bold;'
+                'letter-spacing:0.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">'
+                "Key Risk Notes</div>"
+                f"{notes_rows}</td></tr>"
+            )
+
+    tag_colors = {"CRITICAL": "#ef4444", "HIGH": "#f97316", "MEDIUM": "#3b82f6"}
+    indicators = _detect_indicators(fields)
+    ioc_html = ""
+    if indicators:
+        rows = "".join(
+            '<tr><td style="padding:6px 0;border-bottom:1px dashed #fde68a;">'
+            f'<span style="display:inline-block;padding:2px 8px;border-radius:8px;'
+            f'background-color:{tag_colors.get(tag, "#64748b")};color:#ffffff;'
+            f'font-family:Arial,sans-serif;font-size:10px;font-weight:bold;margin-right:8px;">'
+            f"{html.escape(tag)}</span>"
+            f'<span style="font-family:Arial,sans-serif;font-size:12px;color:#78350f;">'
+            f"{html.escape(desc)}</span></td></tr>"
+            for tag, desc in indicators
+        )
+        ioc_html = (
+            '<tr><td style="padding:16px 20px 0 20px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="border:1px solid #fde68a;border-radius:6px;background-color:#fffbeb;">'
+            '<tr><td style="padding:10px 14px 4px 14px;font-family:Arial,sans-serif;font-size:11px;'
+            'font-weight:bold;letter-spacing:0.06em;color:#92400e;text-transform:uppercase;">'
+            "Risk Indicators</td></tr>"
+            '<tr><td style="padding:0 14px 8px 14px;"><table role="presentation" width="100%" '
+            f'cellpadding="0" cellspacing="0">{rows}</table></td></tr>'
+            "</table></td></tr>"
+        )
+
+    ai_html = ""
+    if ai_analysis:
+        ai_html = (
+            '<tr><td style="padding:16px 20px 0 20px;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="border:1px solid #bbf7d0;border-radius:6px;background-color:#f0fdf4;">'
+            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
+            'color:#14532d;line-height:1.75;">'
+            '<strong style="display:block;margin-bottom:6px;">AI Analysis</strong>'
+            f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
+        )
+
+    commands = (
+        _firewall_remediation_commands(fields)
+        if rule_id == "firewall_open_to_internet"
+        else _sa_key_remediation_commands(fields)
+        if rule_id == "service_account_key_created"
+        else []
+    )
+    remediation_html = ""
+    if commands:
+        command_rows = "".join(_render_code_block(label, cmd) for label, cmd in commands)
+        remediation_html = (
+            '<tr><td style="padding:16px 20px 0 20px;">'
+            '<div style="font-family:Arial,sans-serif;font-size:10px;font-weight:bold;'
+            'letter-spacing:0.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">'
+            "Remediation Commands</div>"
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{command_rows}</table>'
+            "</td></tr>"
+        )
+
+    buttons_html = _render_cta_row(
+        [
+            ("Open Cloud Console", console_url, "#0f172a", "#ffffff", "#0f172a"),
+            ("IAM Policy", _iam_console_url(fields), "#ffffff", accent, accent),
+        ]
+    )
+
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;border-radius:10px;'
+        'overflow:hidden;">'
+        '<tr><td style="background-color:#0f172a;padding:10px 20px;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        '<td style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;">'
+        "GCP AUDIT PLATFORM</td>"
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;">'
+        f"{html.escape(alert_id)}</td></tr></table></td></tr>"
+        f'<tr><td style="padding:16px 20px;background-color:{tint};border-bottom:3px solid {accent};">'
+        f"{_render_severity_badge(severity, accent)}"
+        f'<div style="font-family:Arial,sans-serif;font-size:18px;font-weight:bold;color:#0f172a;'
+        f'margin-top:8px;">{title_e}</div>'
+        '<div style="font-family:Arial,sans-serif;font-size:12px;color:#475569;margin-top:2px;">'
+        f"Rule: {rule_id_e} &middot; {html.escape(generated_at)}</div>"
+        "</td></tr>"
+        f"{zebra_html}{firewall_html}{sa_key_html}{ioc_html}{ai_html}{remediation_html}{buttons_html}"
+        '<tr><td style="padding:14px 20px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
+        '<td style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        "GCP Audit Platform &middot; Automated &middot; Do not reply</td>"
+        '<td style="text-align:right;"><span style="display:inline-block;padding:2px 8px;'
+        'border-radius:8px;background-color:#eff6ff;color:#3b82f6;font-family:Arial,sans-serif;'
+        f'font-size:10px;font-weight:bold;">{rule_id_e}</span></td>'
         "</tr></table></td></tr>"
         "</table>"
     )
