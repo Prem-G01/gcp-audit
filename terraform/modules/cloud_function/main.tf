@@ -147,11 +147,18 @@ resource "google_project_service_identity" "pubsub" {
 # the documented mechanism for forcing a fresh create (and therefore a
 # fresh sleep) on a value change -- bump wait_attempt, not just
 # create_duration, any time this needs to actually take effect again.
+#
+# 90s WAS a genuine fresh wait (confirmed: the Cloud Build fix landed in
+# the same apply, proving the graph executed correctly this time) and
+# still wasn't enough -- this project's pubsub.googleapis.com service
+# agent may be provisioning for the first time, which some reports say
+# can take longer than routine re-reads. Bumped generously rather than
+# inching up a third time.
 resource "time_sleep" "wait_for_pubsub_service_identity" {
-  create_duration = "90s"
+  create_duration = "180s"
 
   triggers = {
-    wait_attempt = "2"
+    wait_attempt = "3"
   }
 
   depends_on = [google_project_service_identity.pubsub]
