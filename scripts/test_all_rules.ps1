@@ -1,8 +1,9 @@
 # Publishes one synthetic audit-log event per shipped rule in
-# config/rules.yaml (covering create, modify, a delete, and a Workload
-# Identity Federation caller), so you can confirm all eight rules actually
-# fire against the live deployed pipeline -- not just the one rule
-# (iam_policy_change) the original smoke test covered.
+# config/rules.yaml (covering create, modify, a delete, a Workload
+# Identity Federation caller, a new-project creation, and a billing
+# change), so you can confirm all ten rules -- and all five email
+# templates -- actually fire against the live deployed pipeline, not
+# just the one rule (iam_policy_change) the original smoke test covered.
 #
 # Uses the Pub/Sub REST API directly (not `gcloud pubsub topics publish
 # --message=...`) -- the CLI approach was proven unreliable earlier in this
@@ -25,7 +26,7 @@ $DelayBetweenEventsSeconds = 5
 
 Write-Host "Project: $Project"
 Write-Host "Topic:   $Topic"
-Write-Host "This publishes 8 synthetic events (matching all 8 rules, several with"
+Write-Host "This publishes 10 synthetic events (matching all 10 rules, several with"
 Write-Host "intentional overlap) and will trigger real emails and some real Gemini calls."
 Write-Host ""
 $Confirmation = Read-Host "Type 'test' to continue"
@@ -194,17 +195,61 @@ Publish-AuditEvent -Name "WIF: compute.instances.insert via Workload Identity Fe
     insertId  = New-InsertId "test-wif-instance"
 }
 
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 9. New project created -- only rule 9's own match condition covers
+# this ("CreateProject"); also picked up by the unclassified_admin_activity
+# safety net since "Create" is a mutating verb.
+Publish-AuditEvent -Name "CREATE: CreateProject (expect: project_created, HIGH, +Gemini -- Template A)" -Payload @{
+    protoPayload = @{
+        methodName          = "google.cloud.resourcemanager.v3.Projects.CreateProject"
+        resourceName        = "projects/test-shadow-project-999"
+        authenticationInfo  = @{ principalEmail = "test-newproject@example.com" }
+        requestMetadata     = @{ callerIp = "203.0.113.210" }
+        request             = @{ project = @{ projectId = "test-shadow-project-999"; displayName = "test-shadow-project-999"; parent = "organizations/123456789012" } }
+    }
+    resource  = @{ type = "project"; labels = @{ project_id = "test-shadow-project-999" } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = New-InsertId "test-project-created"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 10. Billing account linked to a project -- matches rule 10's
+# (BillingAccount|ProjectBillingInfo) regex; also picked up by the
+# unclassified_admin_activity safety net since "Update" is a mutating verb.
+Publish-AuditEvent -Name "MODIFY: UpdateProjectBillingInfo (expect: billing_account_changed, CRITICAL, +Gemini -- Template D)" -Payload @{
+    protoPayload = @{
+        methodName          = "google.cloud.billing.v1.CloudBilling.UpdateProjectBillingInfo"
+        resourceName        = "projects/$Project"
+        authenticationInfo  = @{ principalEmail = "test-billing@example.com" }
+        requestMetadata     = @{ callerIp = "203.0.113.220" }
+        request             = @{ projectBillingInfo = @{ billingAccountName = "billingAccounts/000000-111111-222222" } }
+    }
+    resource  = @{ type = "project"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = New-InsertId "test-billing-changed"
+}
+
 Write-Host ""
-Write-Host "All 8 events published. Wait ~60s (4 events also call Gemini, which"
+Write-Host "All 10 events published. Wait ~60s (6 events also call Gemini, which"
 Write-Host "adds latency), then check:"
 Write-Host ""
 Write-Host "  gcloud functions logs read process-audit-log-gmail-alerts ``"
-Write-Host "    --project=$Project --region=asia-south1 --gen2 --limit=200"
+Write-Host "    --project=$Project --region=asia-south1 --gen2 --limit=250"
 Write-Host ""
-Write-Host "Expect 8x 'findings_evaluated' and 12x 'gmail_alert_sent' total --"
-Write-Host "several events now match more than one rule (rules 1-6 already"
-Write-Host "overlap for events 5/6, and the unclassified_admin_activity safety"
-Write-Host "net additionally overlaps events 4, 7, and 8 by design -- see rule"
-Write-Host "7's comment in config/rules.yaml). 4 findings get an AI Analysis"
-Write-Host "section populated (org_policy_modified, public_iam_grant,"
-Write-Host "audit_config_changed, federated_identity_action)."
+Write-Host "Expect 10x 'findings_evaluated' and 16x 'gmail_alert_sent' total --"
+Write-Host "several events match more than one rule by design (see rule 7's"
+Write-Host "comment in config/rules.yaml for why). 6 findings get an AI"
+Write-Host "Analysis section (org_policy_modified, public_iam_grant,"
+Write-Host "audit_config_changed, federated_identity_action, project_created,"
+Write-Host "billing_account_changed)."
+Write-Host ""
+Write-Host "This run also exercises all 5 email templates:"
+Write-Host "  A (Executive Dark)      -- project_created"
+Write-Host "  B (Security Operations) -- iam_policy_change, org_policy_modified,"
+Write-Host "                             audit_config_changed, federated_identity_action"
+Write-Host "  C (Clean Enterprise)    -- unclassified_admin_activity"
+Write-Host "  D (Executive Summary)   -- public_iam_grant, billing_account_changed"
+Write-Host "  E (Engineer Detail)     -- firewall_open_to_internet, service_account_key_created"
