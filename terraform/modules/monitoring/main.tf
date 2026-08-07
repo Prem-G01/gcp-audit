@@ -130,6 +130,19 @@ resource "google_monitoring_alert_policy" "execution_count_absent" {
   notification_channels = var.notification_channels
 }
 
+# A freshly created log-based metric is not immediately queryable by the
+# alert-policy API -- unlike the pubsub-service-identity issue elsewhere in
+# this stack (which turned out to be unnecessary entirely), this one is a
+# real, GCP-acknowledged propagation delay: the 404 error itself states
+# "If a metric was created recently, it could take up to 10 minutes to
+# become available." Using that stated bound directly rather than guessing
+# at a smaller number and risking another failed apply cycle.
+resource "time_sleep" "wait_for_failure_metrics" {
+  create_duration = "600s"
+
+  depends_on = [google_logging_metric.failure_counters]
+}
+
 # 4. The app's own caught-and-logged failures (Gmail/BigQuery/DLQ/decode) --
 # these deliberately don't fail the function (constraint: never block the
 # email), which is exactly why they need external alerting instead of
@@ -160,5 +173,5 @@ resource "google_monitoring_alert_policy" "caught_failures" {
 
   notification_channels = var.notification_channels
 
-  depends_on = [google_logging_metric.failure_counters]
+  depends_on = [time_sleep.wait_for_failure_metrics]
 }
