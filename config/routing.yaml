@@ -34,19 +34,21 @@ severity_styles:
   #   tint: "#ede9fe"
 
 recipients:
-  # NOTE: these are placeholder addresses. Replace them with real
-  # distribution lists/mailboxes before deploying.
+  # NOTE: routed to a single real mailbox for now (the same one proven
+  # working by scripts/probe_dwd.py) so the pipeline is genuinely
+  # end-to-end testable. Replace with real distribution lists before
+  # relying on this for actual production alerting.
   CRITICAL:
-    - secops-oncall@example.com
+    - premkumar.gunasekaran@docugenieai.com
   HIGH:
-    - secops-oncall@example.com
+    - premkumar.gunasekaran@docugenieai.com
   MEDIUM:
-    - secops-team@example.com
+    - premkumar.gunasekaran@docugenieai.com
   LOW:
-    - secops-team@example.com
+    - premkumar.gunasekaran@docugenieai.com
   INFO:
-    - secops-team@example.com
+    - premkumar.gunasekaran@docugenieai.com
 
   # Used when a finding's severity has no explicit entry above.
   default:
-    - secops-team@example.com
+    - premkumar.gunasekaran@docugenieai.com

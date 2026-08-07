@@ -120,9 +120,9 @@ variable "function_max_instances" {
 # --- Gmail alerting (values become the function's env vars) --------------
 
 variable "gmail_sender" {
-  description = "Workspace mailbox impersonated when sending alerts (GMAIL_SENDER). PLACEHOLDER -- must hold a Gmail license."
+  description = "Workspace mailbox impersonated when sending alerts (GMAIL_SENDER). Must hold a Gmail license."
   type        = string
-  default     = "audit-alerts@yourdomain.example"
+  default     = "premkumar.gunasekaran@docugenieai.com"
 }
 
 variable "gmail_sender_name" {
