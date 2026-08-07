@@ -9,17 +9,17 @@
 
 severity_styles:
   CRITICAL:
-    accent: "#b91c1c"
-    tint: "#fee2e2"
+    accent: "#ef4444"
+    tint: "#fef2f2"
   HIGH:
-    accent: "#c2410c"
-    tint: "#ffedd5"
+    accent: "#f97316"
+    tint: "#fff7ed"
   MEDIUM:
-    accent: "#a16207"
-    tint: "#fef9c3"
+    accent: "#3b82f6"
+    tint: "#eff6ff"
   LOW:
-    accent: "#15803d"
-    tint: "#dcfce7"
+    accent: "#64748b"
+    tint: "#f8fafc"
   INFO:
     accent: "#1d4ed8"
     tint: "#dbeafe"

@@ -46,8 +46,17 @@ def mailer_config() -> gmail_sender.MailerConfig:
 ROUTING_YAML = """
 severity_styles:
   CRITICAL:
-    accent: "#b91c1c"
-    tint: "#fee2e2"
+    accent: "#ef4444"
+    tint: "#fef2f2"
+  HIGH:
+    accent: "#f97316"
+    tint: "#fff7ed"
+  MEDIUM:
+    accent: "#3b82f6"
+    tint: "#eff6ff"
+  LOW:
+    accent: "#64748b"
+    tint: "#f8fafc"
 
 recipients:
   CRITICAL:
