@@ -10,6 +10,7 @@ sa-*.json
 *.tfstate
 *.tfstate.*
 terraform.tfvars
+*.tfplan
 .build/
 plan_output.txt
 .pytest_cache/

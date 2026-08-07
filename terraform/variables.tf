@@ -37,6 +37,20 @@ variable "deployment_mode" {
   }
 }
 
+variable "project_sink_enabled_override" {
+  description = <<-EOT
+    Explicitly force the interim project-level sink for THIS stack's own
+    project_id on (true) or off (false). Defaults to null, meaning "derive
+    from deployment_mode" (on whenever deployment_mode != "full"). Set to
+    false if a folder-level sink (monitored_folder_ids) or the org-level
+    sink already covers project_id's own folder -- otherwise both sinks
+    would capture and forward the same events, double-publishing every
+    real event in project_id and causing duplicate alerts.
+  EOT
+  type    = bool
+  default = null
+}
+
 variable "org_id" {
   description = "GCP organization id. Required when deployment_mode = \"full\"; ignored otherwise."
   type        = string

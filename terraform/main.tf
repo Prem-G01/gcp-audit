@@ -12,6 +12,16 @@ locals {
   # refers to this root module's own directory regardless of which module
   # evaluates it, so this resolves consistently everywhere it's used.
   app_source_dir = abspath("${path.root}/..")
+
+  # See project_sink_enabled_override's description: null means "derive
+  # from deployment_mode" (the original behavior); a non-null value lets a
+  # folder/org sink that already covers project_id's own folder switch
+  # this off explicitly, avoiding double-published events.
+  project_sink_enabled = (
+    var.project_sink_enabled_override != null
+    ? var.project_sink_enabled_override
+    : var.deployment_mode != "full"
+  )
 }
 
 # Existence check only -- this SA is pre-existing and never created,
@@ -35,7 +45,7 @@ module "logging" {
   source = "./modules/logging"
 
   enabled                          = var.deployment_mode == "full"
-  project_sink_enabled             = var.deployment_mode != "full"
+  project_sink_enabled             = local.project_sink_enabled
   additional_monitored_project_ids = var.additional_monitored_project_ids
   monitored_folder_ids             = var.monitored_folder_ids
   org_id                           = var.org_id
