@@ -1,0 +1,29 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "compute.googleapis.com",
+    "methodName": "v1.compute.disks.insert",
+    "resourceName": "projects/prj-dg-devops-test/zones/asia-south1-a/disks/test-disk-001",
+    "authenticationInfo": {
+      "principalEmail": "heidi@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.230",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "request": {
+      "name": "test-disk-001",
+      "sizeGb": "100"
+    }
+  },
+  "resource": {
+    "type": "gce_disk",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-07T15:00:00Z",
+  "insertId": "fixture-resource-created-011",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

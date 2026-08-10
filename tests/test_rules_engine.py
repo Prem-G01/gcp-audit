@@ -16,6 +16,8 @@ RULE_IDS = [
     "federated_identity_action",
     "project_created",
     "billing_account_changed",
+    "resource_created",
+    "resource_deleted",
 ]
 
 
@@ -302,6 +304,8 @@ def test_evaluate_rules_never_raises_on_bad_rule_evaluation(tmp_path, monkeypatc
         ("federated_identity_action.json", "federated_identity_action"),
         ("project_created.json", "project_created"),
         ("billing_account_changed.json", "billing_account_changed"),
+        ("resource_created.json", "resource_created"),
+        ("resource_deleted.json", "resource_deleted"),
     ],
 )
 def test_shipped_rule_matches_its_fixture(load_fixture, fixture_name, expected_rule_id) -> None:
@@ -323,6 +327,8 @@ def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
         "federated_identity_action",
         "project_created",
         "billing_account_changed",
+        "resource_created",
+        "resource_deleted",
     }
     assert covered == set(RULE_IDS)
     assert {rule.id for rule in engine._RULES} == set(RULE_IDS)
@@ -339,6 +345,8 @@ def test_requires_ai_analysis() -> None:
     assert engine.requires_ai_analysis("iam_policy_change") is False
     assert engine.requires_ai_analysis("firewall_open_to_internet") is False
     assert engine.requires_ai_analysis("unclassified_admin_activity") is False
+    assert engine.requires_ai_analysis("resource_created") is False
+    assert engine.requires_ai_analysis("resource_deleted") is False
     assert engine.requires_ai_analysis("no_such_rule") is False
 
 
@@ -493,5 +501,5 @@ def test_console_url_template_unknown_placeholder(tmp_path) -> None:
 
 def test_real_config_rules_yaml_loads_without_raising() -> None:
     rules = engine.load_rules()
-    assert len(rules) == 10
+    assert len(rules) == 12
     assert {rule.id for rule in rules} == set(RULE_IDS)

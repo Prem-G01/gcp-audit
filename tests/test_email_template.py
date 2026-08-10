@@ -186,9 +186,12 @@ def test_select_template_rule_id_overrides_beat_severity() -> None:
     assert _select_template("LOW", "project_created") == "A"
 
 
-def test_select_template_all_ten_shipped_rules() -> None:
+def test_select_template_all_twelve_shipped_rules() -> None:
     """Every real rule id in config/rules.yaml maps to a real template --
     catches drift if a rule is renamed/added without updating this module.
+    resource_created/resource_deleted have no rule-id-specific override,
+    so they fall through to the HIGH severity default (A) -- confirming
+    that fallback still applies correctly for rules added after the fact.
     """
     expected = {
         "iam_policy_change": "B",
@@ -201,6 +204,8 @@ def test_select_template_all_ten_shipped_rules() -> None:
         "federated_identity_action": "B",
         "project_created": "A",
         "billing_account_changed": "D",
+        "resource_created": "A",
+        "resource_deleted": "A",
     }
     severities = {
         "iam_policy_change": "HIGH",
@@ -213,6 +218,8 @@ def test_select_template_all_ten_shipped_rules() -> None:
         "federated_identity_action": "HIGH",
         "project_created": "HIGH",
         "billing_account_changed": "CRITICAL",
+        "resource_created": "HIGH",
+        "resource_deleted": "HIGH",
     }
     for rule_id, template in expected.items():
         assert _select_template(severities[rule_id], rule_id) == template, rule_id

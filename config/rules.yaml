@@ -339,6 +339,14 @@ rules:
   #    is meant to guarantee visibility, not to compete with the specific
   #    CRITICAL/HIGH rules above for attention.
   #
+  #    "insert"/"create"/"delete" are deliberately NOT in this rule's verb
+  #    list -- rules 11 and 12 catch those unconditionally (any create/
+  #    insert, any delete, org-wide, HIGH), so leaving them here would
+  #    duplicate a HIGH alert with a redundant LOW one on every single
+  #    occurrence. Everything else (update/patch/remove/enable/disable/
+  #    revoke/grant/add/attach/detach/rotate/undelete/restore/move/import/
+  #    export) still flows through this LOW safety net.
+  #
   #    It deliberately does NOT try to exclude every case already covered
   #    by rules 4-6 (e.g. a non-public firewall change or a SetIamPolicy
   #    call with no auditConfigs/allUsers will match both this rule and
@@ -354,11 +362,12 @@ rules:
   - id: unclassified_admin_activity
     title: "Unclassified admin activity"
     description: >
-      A mutating call (insert/create/update/patch/delete/remove/enable/
-      disable/revoke/grant/add/attach/detach/rotate/undelete/restore/move/
-      import/export) was made against a resource and didn't fall under
-      SetIamPolicy, CreateServiceAccountKey, or an OrgPolicy method --
-      i.e. it isn't specifically covered by any other rule in this file.
+      A mutating call (update/patch/remove/enable/disable/revoke/grant/
+      add/attach/detach/rotate/undelete/restore/move/import/export) was
+      made against a resource and didn't fall under SetIamPolicy or an
+      OrgPolicy method -- i.e. it isn't specifically covered by any other
+      rule in this file. Create/insert and delete calls are excluded here
+      -- see rules 11 and 12, which cover those at HIGH severity instead.
       Exists so nothing mutating is ever silently unalerted.
     severity: LOW
     ai_analysis: false
@@ -368,15 +377,11 @@ rules:
       all_of:
         - field: method_name
           op: regex
-          value: '(?i)(insert|create|update|patch|delete|remove|enable|disable|revoke|grant|add|attach|detach|rotate|undelete|restore|move|import|export)'
+          value: '(?i)(update|patch|remove|enable|disable|revoke|grant|add|attach|detach|rotate|undelete|restore|move|import|export)'
         - not:
             field: method_name
             op: contains
             value: "SetIamPolicy"
-        - not:
-            field: method_name
-            op: contains
-            value: "CreateServiceAccountKey"
         - not:
             field: method_name
             op: contains
@@ -485,6 +490,78 @@ rules:
       field: method_name
       op: regex
       value: "(BillingAccount|ProjectBillingInfo)"
+    fields:
+      Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Event Time (UTC): event_timestamp
+      Method: method_name
+      Resource: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Change: raw.protoPayload.request
+
+  # 11. Any resource created (VM, disk, network, bucket, dataset, topic,
+  #     ...), org-wide. Excludes CreateServiceAccountKey and CreateProject
+  #     -- those already have their own dedicated, more detailed HIGH
+  #     rules (2 and 9) with Gemini analysis; this rule firing too would
+  #     just be a second, more generic email for the exact same event.
+  - id: resource_created
+    title: "Resource created"
+    description: >
+      A create/insert call succeeded against some resource. Broad by
+      design -- VM instances, disks, networks, buckets, and more all use
+      "insert" or "Create" in their method name. Creation can carry real
+      cost and is a common pattern for resource abuse (e.g. cryptomining)
+      if credentials are compromised.
+    severity: HIGH
+    ai_analysis: false
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      all_of:
+        - field: method_name
+          op: regex
+          value: "(?i)(insert|create)"
+        - not:
+            field: method_name
+            op: contains
+            value: "CreateServiceAccountKey"
+        - not:
+            field: method_name
+            op: contains
+            value: "CreateProject"
+    fields:
+      Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Event Time (UTC): event_timestamp
+      Method: method_name
+      Resource: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Change: raw.protoPayload.request
+
+  # 12. Any resource deleted, org-wide. Unlike creation, deletion is
+  #     often not reversible -- data loss risk, not just cost/abuse risk.
+  - id: resource_deleted
+    title: "Resource deleted"
+    description: >
+      A delete call succeeded against some resource. Broad by design --
+      often not reversible, so worth a human glance every time regardless
+      of what the specific resource type was.
+    severity: HIGH
+    ai_analysis: false
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      field: method_name
+      op: regex
+      value: "(?i)delete"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject

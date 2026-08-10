@@ -2,7 +2,7 @@
   "protoPayload": {
     "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
     "serviceName": "iam.googleapis.com",
-    "methodName": "google.iam.admin.v1.DeleteServiceAccount",
+    "methodName": "google.iam.admin.v1.DisableServiceAccount",
     "resourceName": "projects/prj-dg-devops-test/serviceAccounts/old-unused-sa@prj-dg-devops-test.iam.gserviceaccount.com",
     "authenticationInfo": {
       "principalEmail": "carol@example.com"

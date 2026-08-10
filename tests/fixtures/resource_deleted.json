@@ -1,0 +1,25 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "compute.googleapis.com",
+    "methodName": "v1.compute.instances.delete",
+    "resourceName": "projects/prj-dg-devops-test/zones/asia-south1-a/instances/prod-vm-001",
+    "authenticationInfo": {
+      "principalEmail": "ivan@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.240",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    }
+  },
+  "resource": {
+    "type": "gce_instance",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-07T15:05:00Z",
+  "insertId": "fixture-resource-deleted-012",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}
