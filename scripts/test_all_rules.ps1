@@ -1,9 +1,11 @@
 # Publishes one synthetic audit-log event per shipped rule in
 # config/rules.yaml (covering create, modify, a delete, a Workload
 # Identity Federation caller, a new-project creation, and a billing
-# change), so you can confirm all ten rules -- and all five email
+# change), so you can confirm all twelve rules -- and all five email
 # templates -- actually fire against the live deployed pipeline, not
 # just the one rule (iam_policy_change) the original smoke test covered.
+# resource_created/resource_deleted (rules 11-12) don't get a dedicated
+# event -- they're exercised incidentally via overlap on events 4, 7, 8.
 #
 # Uses the Pub/Sub REST API directly (not `gcloud pubsub topics publish
 # --message=...`) -- the CLI approach was proven unreliable earlier in this
@@ -109,7 +111,7 @@ Publish-AuditEvent -Name "MODIFY: OrgPolicy.UpdatePolicy (expect: org_policy_mod
 Start-Sleep -Seconds $DelayBetweenEventsSeconds
 
 # --- 4. CREATE -- firewall rule open to the internet ------------------------
-Publish-AuditEvent -Name "CREATE: firewalls.insert with 0.0.0.0/0 (expect: firewall_open_to_internet, CRITICAL)" -Payload @{
+Publish-AuditEvent -Name "CREATE: firewalls.insert with 0.0.0.0/0 (expect: firewall_open_to_internet CRITICAL + resource_created HIGH)" -Payload @{
     protoPayload = @{
         methodName          = "v1.compute.firewalls.insert"
         resourceName        = "projects/$Project/global/firewalls/test-allow-all"
@@ -157,10 +159,9 @@ Publish-AuditEvent -Name "MODIFY: SetIamPolicy with auditConfigs (expect: audit_
 Start-Sleep -Seconds $DelayBetweenEventsSeconds
 
 # --- 7. DELETE -- no rule 1-6 specifically covers deletes; this now exercises
-# the unclassified_admin_activity safety-net rule instead of a true zero-match
-# (that catch-all rule is what "no dark spots" coverage means in practice --
-# see config/rules.yaml rule 7's comment).
-Publish-AuditEvent -Name "DELETE: DeleteServiceAccount (expect: unclassified_admin_activity, LOW)" -Payload @{
+# rule 12 (resource_deleted, HIGH, org-wide) instead of a true zero-match --
+# see config/rules.yaml rule 12's comment.
+Publish-AuditEvent -Name "DELETE: DeleteServiceAccount (expect: resource_deleted, HIGH)" -Payload @{
     protoPayload = @{
         methodName          = "google.iam.admin.v1.DeleteServiceAccount"
         resourceName        = "projects/$Project/serviceAccounts/old-unused-sa@$Project.iam.gserviceaccount.com"
@@ -176,10 +177,9 @@ Start-Sleep -Seconds $DelayBetweenEventsSeconds
 
 # --- 8. Federated (Workload Identity Federation) identity, no principalEmail
 # at all -- only principalSubject, matching how GCP actually logs a pure WIF
-# caller. Expected to match BOTH unclassified_admin_activity (an "insert" not
-# covered by rules 1-6) and federated_identity_action (rule 8, ai_analysis:
-# true).
-Publish-AuditEvent -Name "WIF: compute.instances.insert via Workload Identity Federation (expect: unclassified_admin_activity + federated_identity_action, HIGH, +Gemini)" -Payload @{
+# caller. Expected to match BOTH resource_created (rule 11, an "insert") and
+# federated_identity_action (rule 8, ai_analysis: true).
+Publish-AuditEvent -Name "WIF: compute.instances.insert via Workload Identity Federation (expect: resource_created + federated_identity_action, HIGH, +Gemini)" -Payload @{
     protoPayload = @{
         methodName          = "v1.compute.instances.insert"
         resourceName        = "projects/$Project/zones/asia-south1-a/instances/ci-deployed-vm"
@@ -198,8 +198,9 @@ Publish-AuditEvent -Name "WIF: compute.instances.insert via Workload Identity Fe
 Start-Sleep -Seconds $DelayBetweenEventsSeconds
 
 # --- 9. New project created -- only rule 9's own match condition covers
-# this ("CreateProject"); also picked up by the unclassified_admin_activity
-# safety net since "Create" is a mutating verb.
+# this ("CreateProject"); deliberately excluded from resource_created
+# (rule 11) and the unclassified_admin_activity safety net, since rule 9
+# already gives this its own dedicated, more detailed HIGH alert.
 Publish-AuditEvent -Name "CREATE: CreateProject (expect: project_created, HIGH, +Gemini -- Template A)" -Payload @{
     protoPayload = @{
         methodName          = "google.cloud.resourcemanager.v3.Projects.CreateProject"
@@ -239,15 +240,16 @@ Write-Host ""
 Write-Host "  gcloud functions logs read process-audit-log-gmail-alerts ``"
 Write-Host "    --project=$Project --region=asia-south1 --gen2 --limit=250"
 Write-Host ""
-Write-Host "Expect 10x 'findings_evaluated' and 16x 'gmail_alert_sent' total --"
+Write-Host "Expect 10x 'findings_evaluated' and 15x 'gmail_alert_sent' total --"
 Write-Host "several events match more than one rule by design (see rule 7's"
 Write-Host "comment in config/rules.yaml for why). 6 findings get an AI"
 Write-Host "Analysis section (org_policy_modified, public_iam_grant,"
 Write-Host "audit_config_changed, federated_identity_action, project_created,"
-Write-Host "billing_account_changed)."
+Write-Host "billing_account_changed). resource_created/resource_deleted"
+Write-Host "(rules 11-12, HIGH) also fire for events 4, 7, and 8."
 Write-Host ""
 Write-Host "This run also exercises all 5 email templates:"
-Write-Host "  A (Executive Dark)      -- project_created"
+Write-Host "  A (Executive Dark)      -- project_created, resource_created, resource_deleted"
 Write-Host "  B (Security Operations) -- iam_policy_change, org_policy_modified,"
 Write-Host "                             audit_config_changed, federated_identity_action"
 Write-Host "  C (Clean Enterprise)    -- unclassified_admin_activity"

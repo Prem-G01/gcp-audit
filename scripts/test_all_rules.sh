@@ -2,9 +2,11 @@
 # Publishes one synthetic audit-log event per shipped rule in
 # config/rules.yaml (covering create, modify, a delete, a Workload
 # Identity Federation caller, a new-project creation, and a billing
-# change), so you can confirm all ten rules -- and all five email
+# change), so you can confirm all twelve rules -- and all five email
 # templates -- actually fire against the live deployed pipeline, not
 # just the one rule (iam_policy_change) the original smoke test covered.
+# resource_created/resource_deleted (rules 11-12) don't get a dedicated
+# event -- they're exercised incidentally via overlap on events 4, 7, 8.
 #
 # Uses the Pub/Sub REST API directly via curl + jq (not `gcloud pubsub
 # topics publish --message=...`) -- jq builds the JSON safely with proper
@@ -129,7 +131,7 @@ payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(in
   timestamp: $ts,
   insertId: $iid
 }')"
-publish_event "CREATE: firewalls.insert with 0.0.0.0/0 (expect: firewall_open_to_internet, CRITICAL)" "${payload}"
+publish_event "CREATE: firewalls.insert with 0.0.0.0/0 (expect: firewall_open_to_internet CRITICAL + resource_created HIGH)" "${payload}"
 sleep "${DELAY_BETWEEN_EVENTS_SECONDS}"
 
 # --- 5. MODIFY -- public IAM/bucket grant (ai_analysis: true) --------------
@@ -167,9 +169,8 @@ publish_event "MODIFY: SetIamPolicy with auditConfigs (expect: audit_config_chan
 sleep "${DELAY_BETWEEN_EVENTS_SECONDS}"
 
 # --- 7. DELETE -- no rule 1-6 specifically covers deletes; this now exercises
-# the unclassified_admin_activity safety-net rule instead of a true zero-match
-# (that catch-all rule is what "no dark spots" coverage means in practice --
-# see config/rules.yaml rule 7's comment).
+# rule 12 (resource_deleted, HIGH, org-wide) instead of a true zero-match --
+# see config/rules.yaml rule 12's comment.
 payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(insert_id test-delete-sa)" '{
   protoPayload: {
     methodName: "google.iam.admin.v1.DeleteServiceAccount",
@@ -182,14 +183,13 @@ payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(in
   timestamp: $ts,
   insertId: $iid
 }')"
-publish_event "DELETE: DeleteServiceAccount (expect: unclassified_admin_activity, LOW)" "${payload}"
+publish_event "DELETE: DeleteServiceAccount (expect: resource_deleted, HIGH)" "${payload}"
 sleep "${DELAY_BETWEEN_EVENTS_SECONDS}"
 
 # --- 8. Federated (Workload Identity Federation) identity, no principalEmail
 # at all -- only principalSubject, matching how GCP actually logs a pure WIF
-# caller. Expected to match BOTH unclassified_admin_activity (an "insert" not
-# covered by rules 1-6) and federated_identity_action (rule 8, ai_analysis:
-# true).
+# caller. Expected to match BOTH resource_created (rule 11, an "insert") and
+# federated_identity_action (rule 8, ai_analysis: true).
 payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(insert_id test-wif-instance)" '{
   protoPayload: {
     methodName: "v1.compute.instances.insert",
@@ -205,12 +205,13 @@ payload="$(jq -n --arg project "${PROJECT}" --arg ts "$(now_ts)" --arg iid "$(in
   timestamp: $ts,
   insertId: $iid
 }')"
-publish_event "WIF: compute.instances.insert via Workload Identity Federation (expect: unclassified_admin_activity + federated_identity_action, HIGH, +Gemini)" "${payload}"
+publish_event "WIF: compute.instances.insert via Workload Identity Federation (expect: resource_created + federated_identity_action, HIGH, +Gemini)" "${payload}"
 sleep "${DELAY_BETWEEN_EVENTS_SECONDS}"
 
 # --- 9. New project created -- only rule 9's own match condition covers
-# this ("CreateProject"); also picked up by the unclassified_admin_activity
-# safety net since "Create" is a mutating verb.
+# this ("CreateProject"); deliberately excluded from resource_created
+# (rule 11) and the unclassified_admin_activity safety net, since rule 9
+# already gives this its own dedicated, more detailed HIGH alert.
 payload="$(jq -n --arg ts "$(now_ts)" --arg iid "$(insert_id test-project-created)" '{
   protoPayload: {
     methodName: "google.cloud.resourcemanager.v3.Projects.CreateProject",
@@ -252,12 +253,21 @@ echo
 echo "  gcloud functions logs read process-audit-log-gmail-alerts \\"
 echo "    --project=${PROJECT} --region=asia-south1 --gen2 --limit=250"
 echo
-echo "Expect 10x 'findings_evaluated' and 16x 'gmail_alert_sent' total --"
+echo "Expect 10x 'findings_evaluated' and 15x 'gmail_alert_sent' total --"
 echo "several events match more than one rule by design (see rule 7's"
 echo "comment in config/rules.yaml for why). 6 findings get an AI Analysis"
 echo "section (org_policy_modified, public_iam_grant, audit_config_changed,"
 echo "federated_identity_action, project_created, billing_account_changed)."
+echo "resource_created/resource_deleted (rules 11-12, HIGH) also fire for"
+echo "events 4, 7, and 8."
 echo
+echo "This run also exercises all 5 email templates:"
+echo "  A (Executive Dark)      -- project_created, resource_created, resource_deleted"
+echo "  B (Security Operations) -- iam_policy_change, org_policy_modified,"
+echo "                             audit_config_changed, federated_identity_action"
+echo "  C (Clean Enterprise)    -- unclassified_admin_activity"
+echo "  D (Executive Summary)   -- public_iam_grant, billing_account_changed"
+echo "  E (Engineer Detail)     -- firewall_open_to_internet, service_account_key_created"
 echo "This run also exercises all 5 email templates:"
 echo "  A (Executive Dark)      -- project_created"
 echo "  B (Security Operations) -- iam_policy_change, org_policy_modified,"
