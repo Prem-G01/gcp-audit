@@ -42,8 +42,13 @@ from src import muting  # noqa: E402
 
 def _current_gcloud_account() -> str:
     try:
+        # shell=True (with a fixed, non-interpolated command string -- no
+        # untrusted input reaches this) because on Windows `gcloud` is a
+        # .cmd shim that subprocess.run can't launch via a plain argv list
+        # without going through the shell.
         result = subprocess.run(
-            ["gcloud", "config", "get-value", "account"],
+            "gcloud config get-value account",
+            shell=True,
             capture_output=True,
             text=True,
             timeout=10,

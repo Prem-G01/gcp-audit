@@ -37,7 +37,7 @@ def _get_client() -> Any:
     if _client is None:
         with _client_lock:
             if _client is None:
-                from google.cloud import firestore  # type: ignore[attr-defined]
+                from google.cloud import firestore
 
                 project = os.environ.get("FIRESTORE_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
                 _client = firestore.Client(project=project) if project else firestore.Client()
