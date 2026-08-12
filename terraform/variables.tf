@@ -47,8 +47,8 @@ variable "project_sink_enabled_override" {
     would capture and forward the same events, double-publishing every
     real event in project_id and causing duplicate alerts.
   EOT
-  type    = bool
-  default = null
+  type        = bool
+  default     = null
 }
 
 variable "org_id" {

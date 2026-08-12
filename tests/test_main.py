@@ -56,6 +56,7 @@ def _no_real_persist_or_dlq(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(main, "persist", lambda *a, **k: None)
     monkeypatch.setattr(main, "write_to_dlq", lambda *a, **k: None)
     monkeypatch.setattr(main, "requires_ai_analysis", lambda rule_id: False)
+    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id: False)
 
 
 def test_happy_path_sends_and_persists(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -167,6 +168,71 @@ def test_malformed_json_payload_acks(monkeypatch: pytest.MonkeyPatch) -> None:
     main.process_audit_log(bad_event)  # must not raise
 
     assert calls == []
+
+
+def test_muted_finding_skips_send_but_still_persists(monkeypatch: pytest.MonkeyPatch) -> None:
+    event = EnrichedEvent(raw_log_id="log-1", project_id="prj-dg-devops-test")
+    finding = _finding()
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id: True)
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
+
+    persisted = []
+    monkeypatch.setattr(main, "persist", lambda f, e, delivery: persisted.append(delivery))
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert fake_client.calls == []  # muted -- never even attempted to send
+    assert len(persisted) == 1
+    assert persisted[0]["delivery_status"] == "muted"
+    assert persisted[0]["recipients"] == []
+    assert persisted[0]["gmail_message_id"] is None
+
+
+def test_muted_finding_never_reaches_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Muting is checked before requires_ai_analysis()/analyze() -- a muted
+    finding must never spend money on an AI analysis nobody will see.
+    """
+    event = EnrichedEvent(raw_log_id="log-1")
+    finding = _finding(rule_id="org_policy_modified")
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id: True)
+
+    def boom_if_called(rule_id: str) -> bool:
+        raise AssertionError("requires_ai_analysis must not be called for a muted finding")
+
+    monkeypatch.setattr(main, "requires_ai_analysis", boom_if_called)
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))  # must not raise
+
+
+def test_only_muted_rule_id_and_project_are_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """is_muted() receives the finding's rule_id and the event's project_id --
+    confirms the two pieces of scoping data actually get threaded through.
+    """
+    event = EnrichedEvent(raw_log_id="log-1", project_id="prj-target")
+    finding = _finding(rule_id="resource_created")
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+
+    seen_args = []
+
+    def fake_is_muted(rule_id: str, project_id: str | None) -> bool:
+        seen_args.append((rule_id, project_id))
+        return False
+
+    monkeypatch.setattr(main.muting, "is_muted", fake_is_muted)
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert seen_args == [("resource_created", "prj-target")]
 
 
 def test_unexpected_exception_in_evaluate_rules_propagates(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -41,20 +41,32 @@ recipients:
   CRITICAL:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
+    - kalpana.babu@securekloud.com
   HIGH:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
+    - kalpana.babu@securekloud.com
   MEDIUM:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
+    - kalpana.babu@securekloud.com
   LOW:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
+    - kalpana.babu@securekloud.com
   INFO:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
+    - kalpana.babu@securekloud.com
 
   # Used when a finding's severity has no explicit entry above.
   default:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
+    - kalpana.babu@securekloud.com

@@ -150,6 +150,11 @@ locals {
     # not just IAM policy management), but it's what actually exists.
     "roles/iam.serviceAccountAdmin",
     "roles/resourcemanager.projectIamAdmin",
+    # Firestore database + TTL field config for the temporary alert-mute
+    # feature (terraform/modules/firestore) -- roles/datastore.owner is
+    # the least-privilege predefined role that covers database creation;
+    # Firestore has no finer-grained "database admin" role.
+    "roles/datastore.owner",
   ]
 }
 resource "google_project_iam_member" "apply_roles" {

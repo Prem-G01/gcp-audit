@@ -16,6 +16,7 @@ from typing import Any
 import functions_framework
 from cloudevents.http import CloudEvent
 
+from src import muting
 from src.analysis.gemini import analyze
 from src.email_template import load_routing_config, render_alert
 from src.enrichment.asset_inventory import enrich
@@ -43,6 +44,24 @@ def _decode_message(cloud_event: CloudEvent) -> dict[str, Any]:
 
 def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
     log_context = {"rule_id": finding.rule_id, "raw_log_id": finding.raw_log_id}
+
+    if muting.is_muted(finding.rule_id, event.project_id):
+        # Muting hides the email, never the record that this matched --
+        # still persisted, just with no recipients/message id. Checked
+        # before the Gemini call too, so a muted finding doesn't spend
+        # money on an analysis nobody will see.
+        logger.info("alert_muted", extra=log_context)
+        persist(
+            finding,
+            event,
+            Delivery(
+                recipients=[],
+                gmail_message_id=None,
+                delivery_status="muted",
+                delivery_error=None,
+            ),
+        )
+        return
 
     if requires_ai_analysis(finding.rule_id):
         finding = analyze(finding, event)

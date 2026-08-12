@@ -73,6 +73,14 @@ module "iam" {
   dlq_topic_name                = module.pubsub.dlq_topic_name
 }
 
+module "firestore" {
+  source = "./modules/firestore"
+
+  project_id                    = var.project_id
+  location_id                   = var.region
+  runtime_service_account_email = data.google_service_account.runtime.email
+}
+
 module "cloud_function" {
   source = "./modules/cloud_function"
 
