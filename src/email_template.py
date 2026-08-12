@@ -116,6 +116,26 @@ def _field_value(fields: list[tuple[str, Any]], label: str) -> Any | None:
 # policies) -- real HTML sub-tables instead of a Python repr string.
 # -----------------------------------------------------------------------
 
+# Splits a camelCase/PascalCase run at each lowercase->uppercase boundary
+# and at the end of an acronym run (e.g. "IPProtocol" -> "IP Protocol",
+# not "I P Protocol") -- used only to relabel raw GCP API field names for
+# display; never changes the underlying data.
+_CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _prettify_key(key: str) -> str:
+    """Turn a raw GCP API field name into a readable label for nested-value
+    rendering, e.g. "principalSubject" -> "Principal Subject",
+    "sourceRanges" -> "Source Ranges". Purely cosmetic relabeling -- only
+    capitalizes each token's first letter if it's lowercase, so existing
+    acronym casing (IP, TTL, ...) is preserved rather than mangled.
+    """
+    spaced = _CAMEL_BOUNDARY_RE.sub(" ", key.replace("_", " "))
+    words = spaced.split()
+    if not words:
+        return key
+    return " ".join(w[:1].upper() + w[1:] if w[:1].islower() else w for w in words)
+
 
 def _render_nested_value(value: Any, depth: int = 0) -> str:
     """Render a dict/list field value as a nested HTML table/list.
@@ -132,7 +152,7 @@ def _render_nested_value(value: Any, depth: int = 0) -> str:
             "<tr>"
             '<td style="padding:2px 8px 2px 0;font-family:Arial,sans-serif;font-size:12px;'
             'font-weight:bold;color:#374151;vertical-align:top;white-space:nowrap;">'
-            f"{html.escape(str(k))}</td>"
+            f"{html.escape(_prettify_key(str(k)))}</td>"
             '<td style="padding:2px 0;font-family:Arial,sans-serif;font-size:12px;'
             f'color:#111827;vertical-align:top;">{_render_nested_value(v, depth + 1)}</td>'
             "</tr>"
@@ -599,6 +619,25 @@ def _detect_indicators(fields: list[tuple[str, Any]]) -> list[tuple[str, str]]:
     return indicators
 
 
+_SUBJECT_IDENTIFIER_LABELS = ("Resource", "Firewall Rule", "Service Account", "New Project Resource")
+
+
+def _subject_identifier(fields: list[tuple[str, Any]]) -> str | None:
+    """A short, human-recognizable identifier for the subject line, so two
+    different real-world events (e.g. two different VMs created) never
+    produce an identical subject. Prefers the actual resource's own name
+    (the last path segment of its resource name) over the full path;
+    falls back to the project id when no resource-shaped field is present.
+    Real data only -- returns None rather than fabricating a placeholder.
+    """
+    for label in _SUBJECT_IDENTIFIER_LABELS:
+        value = _field_value(fields, label)
+        if isinstance(value, str) and value:
+            return value.rstrip("/").split("/")[-1]
+    project = _field_value(fields, "Project")
+    return project if isinstance(project, str) and project else None
+
+
 def render_alert(
     *,
     rule_id: str,
@@ -621,9 +660,12 @@ def render_alert(
     visible = _visible_fields(fields)
     template = _select_template(severity, rule_id)
 
+    identifier = _subject_identifier(visible)
     subject = (
         f"[{_strip_header_injection(severity)}] "
-        f"{_strip_header_injection(title)} - {_strip_header_injection(rule_id)}"
+        f"{_strip_header_injection(title)}"
+        + (f" — {_strip_header_injection(identifier)}" if identifier else "")
+        + f" ({_strip_header_injection(rule_id)})"
     )
 
     renderer = {
@@ -729,7 +771,7 @@ def _render_template_a(
             'style="border:1px solid #bfdbfe;border-radius:6px;background-color:#eff6ff;">'
             '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
             'color:#0f172a;line-height:1.6;">'
-            '<strong style="display:block;margin-bottom:6px;color:#1e40af;">Gemini AI Analysis</strong>'
+            '<strong style="display:block;margin-bottom:6px;color:#1e40af;">&#10022; Gemini AI Analysis</strong>'
             f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
         )
 
@@ -1126,7 +1168,7 @@ def _render_template_d(
             'style="border:1px solid #bfdbfe;border-radius:6px;background-color:#eff6ff;">'
             '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
             'color:#0f172a;line-height:1.75;">'
-            '<strong style="display:block;margin-bottom:6px;color:#1e40af;">AI Analysis</strong>'
+            '<strong style="display:block;margin-bottom:6px;color:#1e40af;">&#10022; Gemini AI Analysis</strong>'
             f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
         )
 
@@ -1297,7 +1339,7 @@ def _render_template_e(
             'style="border:1px solid #bbf7d0;border-radius:6px;background-color:#f0fdf4;">'
             '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
             'color:#14532d;line-height:1.75;">'
-            '<strong style="display:block;margin-bottom:6px;">AI Analysis</strong>'
+            '<strong style="display:block;margin-bottom:6px;">&#10022; Gemini AI Analysis</strong>'
             f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
         )
 

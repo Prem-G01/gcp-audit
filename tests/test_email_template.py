@@ -16,6 +16,7 @@ from src.email_template import (
     _format_timestamp,
     _is_rfc1918,
     _plain_english_title,
+    _prettify_key,
     _resource_name_segment,
     _sa_key_remediation_commands,
     _sa_key_risk_notes,
@@ -78,11 +79,44 @@ def test_none_empty_and_empty_list_fields_are_omitted() -> None:
     assert "value" in html_body
 
 
-def test_subject_format() -> None:
+def test_subject_format_without_identifier() -> None:
     subject, _html_body, _text_body = render_alert(
         rule_id="RULE-42", severity="HIGH", title="Something Bad Happened", fields={}
     )
-    assert subject == "[HIGH] Something Bad Happened - RULE-42"
+    assert subject == "[HIGH] Something Bad Happened (RULE-42)"
+
+
+def test_subject_format_includes_resource_identifier() -> None:
+    subject, _html_body, _text_body = render_alert(
+        rule_id="resource_created",
+        severity="HIGH",
+        title="Resource created",
+        fields={"Resource": "projects/p/zones/z/instances/my-test-vm"},
+    )
+    assert subject == "[HIGH] Resource created — my-test-vm (resource_created)"
+
+
+def test_subject_identifier_falls_back_to_project_when_no_resource_field() -> None:
+    subject, _html_body, _text_body = render_alert(
+        rule_id="project_created", severity="HIGH", title="New GCP project created", fields={"Project": "prj-abc"}
+    )
+    assert subject == "[HIGH] New GCP project created — prj-abc (project_created)"
+
+
+def test_two_different_events_never_produce_identical_subjects() -> None:
+    subject_a, _h, _t = render_alert(
+        rule_id="resource_created",
+        severity="HIGH",
+        title="Resource created",
+        fields={"Resource": "projects/p/zones/z/instances/vm-one"},
+    )
+    subject_b, _h, _t = render_alert(
+        rule_id="resource_created",
+        severity="HIGH",
+        title="Resource created",
+        fields={"Resource": "projects/p/zones/z/instances/vm-two"},
+    )
+    assert subject_a != subject_b
 
 
 def test_nested_list_of_dicts_renders_as_table_not_repr() -> None:
@@ -97,10 +131,11 @@ def test_nested_list_of_dicts_renders_as_table_not_repr() -> None:
         },
     )
     # A raw Python repr would read "[{'action': 'ADD', ...". Confirm that's gone
-    # and the value instead rendered as its own nested <table>.
+    # and the value instead rendered as its own nested <table>, with the raw
+    # API key relabeled for readability ("action" -> "Action").
     assert "[{'action'" not in html_body
     assert html_body.count("<table") >= 2
-    assert "action" in html_body
+    assert "Action" in html_body
     assert "ADD" in html_body
     assert "roles/editor" in html_body
 
@@ -113,7 +148,7 @@ def test_nested_dict_renders_as_table() -> None:
         fields={"Requested Policy": {"bindings": [{"role": "roles/viewer", "members": ["allUsers"]}]}},
     )
     assert "{'bindings'" not in html_body
-    assert "bindings" in html_body
+    assert "Bindings" in html_body
     assert "allUsers" in html_body
 
 
@@ -167,7 +202,25 @@ def test_empty_nested_dict_and_list_render_without_raising() -> None:
         fields={"Outer": {"empty_dict": {}, "empty_list": [], "scalar": "x"}},
     )
     assert "(empty)" in html_body
-    assert "scalar" in html_body
+    assert "Scalar" in html_body
+
+
+def test_prettify_key_camel_case() -> None:
+    assert _prettify_key("principalSubject") == "Principal Subject"
+    assert _prettify_key("sourceRanges") == "Source Ranges"
+    assert _prettify_key("role") == "Role"
+
+
+def test_prettify_key_snake_case() -> None:
+    assert _prettify_key("billing_account_name") == "Billing Account Name"
+
+
+def test_prettify_key_preserves_acronym_casing() -> None:
+    assert _prettify_key("IPProtocol") == "IP Protocol"
+
+
+def test_prettify_key_empty_string_returns_unchanged() -> None:
+    assert _prettify_key("") == ""
 
 
 # --- template selection -------------------------------------------------
