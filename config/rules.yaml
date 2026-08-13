@@ -152,7 +152,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Method: method_name
       Resource: resource_name
       Project: project_id
@@ -182,7 +182,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Service Account: resource_name
       Project: project_id
       Caller IP: request_metadata.caller_ip
@@ -210,7 +210,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Method: method_name
       Resource: resource_name
       Project: project_id
@@ -245,7 +245,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Method: method_name
       Firewall Rule: resource_name
       Project: project_id
@@ -290,7 +290,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Resource: resource_name
       Project: project_id
       Caller IP: request_metadata.caller_ip
@@ -326,7 +326,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Resource: resource_name
       Project: project_id
       Caller IP: request_metadata.caller_ip
@@ -435,7 +435,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Method: method_name
       Resource: resource_name
       Project: project_id
@@ -473,7 +473,7 @@ rules:
       Principal Subject (Federated Identity): raw.protoPayload.authenticationInfo.principalSubject
       Principal Email (if mapped): principal_email
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Method: method_name
       Resource: resource_name
       Project: project_id
@@ -507,7 +507,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       New Project Resource: resource_name
       Caller IP: request_metadata.caller_ip
       User Agent: request_metadata.user_agent
@@ -539,7 +539,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Method: method_name
       Resource: resource_name
       Project: project_id
@@ -592,7 +592,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Method: method_name
       Resource: resource_name
       Project: project_id
@@ -621,7 +621,7 @@ rules:
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
       Service Account Key Used: raw.protoPayload.authenticationInfo.serviceAccountKeyName
       Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
-      Event Time (UTC): event_timestamp
+      Event Time (IST): event_timestamp
       Method: method_name
       Resource: resource_name
       Project: project_id

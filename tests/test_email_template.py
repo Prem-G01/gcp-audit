@@ -13,7 +13,7 @@ from src.email_template import (
     _detect_indicators,
     _firewall_config_detail,
     _firewall_remediation_commands,
-    _format_timestamp,
+    _format_event_time_ist,
     _is_rfc1918,
     _plain_english_summary,
     _plain_english_title,
@@ -171,7 +171,7 @@ def test_fields_grouped_into_labeled_sections() -> None:
         title="Title",
         fields={
             "Principal": "alice@example.com",
-            "Event Time (UTC)": "2026-08-05T12:00:00+00:00",
+            "Event Time (IST)": "2026-08-05T12:00:00+00:00",
             "Method": "SetIamPolicy",
             "Caller IP": "203.0.113.10",
             "Requested Policy": {"bindings": []},
@@ -526,18 +526,59 @@ def test_is_rfc1918() -> None:
     assert _is_rfc1918("not-an-ip") is False
 
 
-def test_format_timestamp_from_datetime() -> None:
+def test_format_event_time_ist_converts_utc_to_ist() -> None:
     dt = datetime(2026, 8, 7, 6, 19, 30, tzinfo=UTC)
-    assert _format_timestamp(dt) == "2026-08-07 06:19:30 UTC"
+    assert _format_event_time_ist(dt) == "2026-08-07 11:49:30 IST"
 
 
-def test_format_timestamp_from_iso_string() -> None:
-    assert _format_timestamp("2026-08-07T06:19:30+00:00") == "2026-08-07 06:19:30 UTC"
+def test_format_event_time_ist_assumes_naive_datetime_is_utc() -> None:
+    """event_timestamp is always UTC-aware in real use (see src/models.py),
+    but this must not raise on a naive datetime either -- assumed UTC
+    rather than raising or silently using the server's local time.
+    """
+    dt = datetime(2026, 8, 7, 6, 19, 30)
+    assert _format_event_time_ist(dt) == "2026-08-07 11:49:30 IST"
 
 
-def test_format_timestamp_never_raises_on_garbage() -> None:
-    assert _format_timestamp("not a timestamp") == "not a timestamp"
-    assert _format_timestamp(None) == "None"
+def test_format_event_time_ist_crosses_into_next_day() -> None:
+    dt = datetime(2026, 8, 7, 20, 0, 0, tzinfo=UTC)  # 20:00 UTC + 5:30 = 01:30 the next day
+    assert _format_event_time_ist(dt) == "2026-08-08 01:30:00 IST"
+
+
+def test_event_time_field_renders_as_ist_in_html_and_text() -> None:
+    """Integration-level check through the real rendering path (not just
+    the unit-level formatter) -- confirms a raw event_timestamp datetime
+    on a real field actually reaches the email as IST, not Python's
+    default str(datetime) (which would show UTC with microseconds, e.g.
+    "2026-08-07 06:19:30.123456+00:00" -- exactly what real emails showed
+    before this fix).
+    """
+    dt = datetime(2026, 8, 7, 6, 19, 30, 123456, tzinfo=UTC)
+    _subject, html_body, text_body = render_alert(
+        rule_id="R1", severity="HIGH", title="Title", fields={"Event Time (IST)": dt}
+    )
+    assert "2026-08-07 11:49:30 IST" in html_body
+    assert "2026-08-07 11:49:30 IST" in text_body
+    assert "06:19:30.123456" not in html_body
+    assert "+00:00" not in html_body
+
+
+def test_business_hours_indicator_still_uses_utc_hour_despite_ist_display() -> None:
+    """Template B's "outside business hours" indicator must keep comparing
+    against the UTC hour, unaffected by the field's display now being IST
+    -- it reads the raw datetime object from `fields` directly, which is
+    never mutated; only _escape_scalar's rendering step converts it to an
+    IST string for display.
+    """
+    dt = datetime(2026, 8, 7, 2, 0, 0, tzinfo=UTC)  # 02:00 UTC -- outside 06:00-20:00 UTC window
+    _subject, html_body, _text_body = render_alert(
+        rule_id="iam_policy_change",
+        severity="HIGH",
+        title="Title",
+        fields={"Event Time (IST)": dt, "Principal": "alice@example.com"},
+    )
+    assert "outside typical business hours" in html_body
+    assert "02:00 UTC" in html_body
 
 
 def test_alert_id_format() -> None:

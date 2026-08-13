@@ -41,6 +41,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import yaml
 
@@ -172,7 +173,15 @@ def _escape_scalar(value: Any) -> str:
     whole email into something unreadable, the same failure mode a huge
     nested dict/list has -- see _MAX_NESTED_RENDER_DEPTH and
     _MAX_LIST_ITEMS.
+
+    A raw `datetime` (event_timestamp, always UTC-aware -- see
+    src/models.py) is rendered in IST rather than via str()'s default
+    ISO-with-microseconds form -- this platform's operators work in IST,
+    and that default form needs manual mental math plus a timezone lookup
+    to be useful at a glance.
     """
+    if isinstance(value, datetime):
+        value = _format_event_time_ist(value)
     text = str(value)
     if len(text) > _MAX_SCALAR_LENGTH:
         text = f"{text[:_MAX_SCALAR_LENGTH]}… ({len(text)} chars total)"
@@ -310,7 +319,7 @@ _FIELD_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "Impersonation/Delegation Chain",
         ),
     ),
-    ("When", ("Event Time (UTC)",)),
+    ("When", ("Event Time (IST)",)),
     ("What", ("Method", "Resource", "Service Account", "Firewall Rule", "Project")),
     ("Where From", ("Caller IP", "User Agent")),
     (
@@ -436,19 +445,21 @@ def _is_rfc1918(ip: str) -> bool:
     return addr.version == 4 and any(addr in net for net in _RFC1918_NETWORKS)
 
 
-def _format_timestamp(ts: Any) -> str:
-    """Format a datetime (or ISO string) as 'YYYY-MM-DD HH:MM:SS UTC'. Never raises."""
-    dt = ts
-    if isinstance(ts, str):
-        try:
-            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        except ValueError:
-            return html.escape(ts)
-    if not isinstance(dt, datetime):
-        return html.escape(str(ts))
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(UTC)
-    return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def _format_event_time_ist(dt: datetime) -> str:
+    """Render a datetime in IST (UTC+5:30) as 'YYYY-MM-DD HH:MM:SS IST' --
+    this platform's operators work in IST, and a bare UTC timestamp needs
+    manual mental math to be useful at a glance. Naive datetimes are
+    assumed UTC (matches src/models.py's EnrichedEvent.event_timestamp,
+    always parsed from a Cloud Audit Log's UTC timestamp). Returns the raw
+    (unescaped) string -- callers (_escape_scalar) escape it same as any
+    other value.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(_IST).strftime("%Y-%m-%d %H:%M:%S IST")
 
 
 def _extract_utc_hour(value: Any) -> int | None:
@@ -712,7 +723,11 @@ def _detect_indicators(fields: list[tuple[str, Any]]) -> list[tuple[str, str]]:
     if isinstance(caller_ip, str) and caller_ip and not _is_rfc1918(caller_ip):
         indicators.append(("HIGH", f"Caller IP {caller_ip} is not in a private (RFC1918) range"))
 
-    hour = _extract_utc_hour(_field_value(fields, "Event Time (UTC)"))
+    # Reads the raw datetime object from `fields` (never mutated -- only
+    # _escape_scalar's rendering step converts it to an IST string), so
+    # this still correctly extracts the UTC hour regardless of the field's
+    # renamed "(IST)" label and its display formatting elsewhere.
+    hour = _extract_utc_hour(_field_value(fields, "Event Time (IST)"))
     if hour is not None and not (6 <= hour < 20):
         indicators.append(("MEDIUM", f"Occurred outside typical business hours ({hour:02d}:00 UTC)"))
 
@@ -1610,7 +1625,16 @@ def _render_text(
     if sections:
         for name, rows in sections:
             lines.append(f"-- {name} --")
-            lines.extend(f"  {key}: {value}" for key, value in rows)
+            # A raw datetime (event_timestamp) needs the same IST
+            # conversion _escape_scalar applies for the HTML body --
+            # otherwise the plain-text body falls back to str(datetime)'s
+            # default UTC-with-microseconds form while the HTML body next
+            # to it shows IST, an inconsistency between the two parts of
+            # the same MIME message.
+            lines.extend(
+                f"  {key}: {_format_event_time_ist(value) if isinstance(value, datetime) else value}"
+                for key, value in rows
+            )
             lines.append("")
     else:
         lines.append("No additional fields.")
