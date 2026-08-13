@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -56,7 +57,7 @@ def _no_real_persist_or_dlq(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(main, "persist", lambda *a, **k: None)
     monkeypatch.setattr(main, "write_to_dlq", lambda *a, **k: None)
     monkeypatch.setattr(main, "requires_ai_analysis", lambda rule_id: False)
-    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id: False)
+    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id, **kwargs: False)
 
 
 def test_happy_path_sends_and_persists(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -175,7 +176,7 @@ def test_muted_finding_skips_send_but_still_persists(monkeypatch: pytest.MonkeyP
     finding = _finding()
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
-    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id: True)
+    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id, **kwargs: True)
 
     fake_client = _FakeGmailClient()
     monkeypatch.setattr(main, "get_client", lambda: fake_client)
@@ -200,7 +201,7 @@ def test_muted_finding_never_reaches_gemini(monkeypatch: pytest.MonkeyPatch) -> 
     finding = _finding(rule_id="org_policy_modified")
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
-    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id: True)
+    monkeypatch.setattr(main.muting, "is_muted", lambda rule_id, project_id, **kwargs: True)
 
     def boom_if_called(rule_id: str) -> bool:
         raise AssertionError("requires_ai_analysis must not be called for a muted finding")
@@ -210,19 +211,23 @@ def test_muted_finding_never_reaches_gemini(monkeypatch: pytest.MonkeyPatch) -> 
     main.process_audit_log(_cloud_event({"insertId": "log-1"}))  # must not raise
 
 
-def test_only_muted_rule_id_and_project_are_checked(monkeypatch: pytest.MonkeyPatch) -> None:
-    """is_muted() receives the finding's rule_id and the event's project_id --
-    confirms the two pieces of scoping data actually get threaded through.
+def test_muted_check_receives_rule_project_principal_and_resource(monkeypatch: pytest.MonkeyPatch) -> None:
+    """is_muted() receives the finding's rule_id/principal_email/resource_name
+    and the event's project_id -- confirms all four pieces of scoping data
+    actually get threaded through, so a principal- or resource-scoped mute
+    (created via mute-web) is checked against, not just rule+project.
     """
     event = EnrichedEvent(raw_log_id="log-1", project_id="prj-target")
-    finding = _finding(rule_id="resource_created")
+    finding = _finding(rule_id="resource_created", principal_email="a@b.com", resource_name="projects/p")
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
 
     seen_args = []
 
-    def fake_is_muted(rule_id: str, project_id: str | None) -> bool:
-        seen_args.append((rule_id, project_id))
+    def fake_is_muted(
+        rule_id: str, project_id: str | None, *, principal_email: str | None = None, resource_name: str | None = None
+    ) -> bool:
+        seen_args.append((rule_id, project_id, principal_email, resource_name))
         return False
 
     monkeypatch.setattr(main.muting, "is_muted", fake_is_muted)
@@ -232,7 +237,7 @@ def test_only_muted_rule_id_and_project_are_checked(monkeypatch: pytest.MonkeyPa
 
     main.process_audit_log(_cloud_event({"insertId": "log-1"}))
 
-    assert seen_args == [("resource_created", "prj-target")]
+    assert seen_args == [("resource_created", "prj-target", "a@b.com", "projects/p")]
 
 
 def test_mute_url_helper_builds_link_with_project(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -252,10 +257,35 @@ def test_mute_url_helper_returns_none_when_env_var_unset(monkeypatch: pytest.Mon
     assert main._mute_url("resource_created", "prj-dg-devops-test") is None
 
 
+def test_mute_url_helper_includes_principal_and_resource_when_project_known(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MUTE_SERVICE_URL", "https://mute-web-abc123-uc.a.run.app")
+    url = main._mute_url(
+        "resource_created", "prj-dg-devops-test", principal_email="a@b.com", resource_name="projects/p"
+    )
+    assert url is not None
+    parsed = parse_qs(urlparse(url).query)
+    assert parsed == {
+        "rule_id": ["resource_created"],
+        "project_id": ["prj-dg-devops-test"],
+        "principal_email": ["a@b.com"],
+        "resource_name": ["projects/p"],
+    }
+
+
+def test_mute_url_helper_omits_principal_and_resource_without_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    """principal_email/resource_name mean nothing without a project scope
+    to narrow within -- _mute_url drops both rather than emitting a link
+    mute-web can't act on.
+    """
+    monkeypatch.setenv("MUTE_SERVICE_URL", "https://mute-web-abc123-uc.a.run.app")
+    url = main._mute_url("resource_created", None, principal_email="a@b.com", resource_name="projects/p")
+    assert url == "https://mute-web-abc123-uc.a.run.app/mute?rule_id=resource_created"
+
+
 def test_handle_finding_passes_mute_url_through_to_render_alert(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MUTE_SERVICE_URL", "https://mute-web-abc123-uc.a.run.app")
     event = EnrichedEvent(raw_log_id="log-1", project_id="prj-dg-devops-test")
-    finding = _finding(rule_id="resource_created")
+    finding = _finding(rule_id="resource_created", principal_email="a@b.com", resource_name="projects/p")
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
 
@@ -273,9 +303,13 @@ def test_handle_finding_passes_mute_url_through_to_render_alert(monkeypatch: pyt
 
     main.process_audit_log(_cloud_event({"insertId": "log-1"}))
 
-    assert captured["mute_url"] == (
-        "https://mute-web-abc123-uc.a.run.app/mute?rule_id=resource_created&project_id=prj-dg-devops-test"
-    )
+    parsed = parse_qs(urlparse(captured["mute_url"]).query)
+    assert parsed == {
+        "rule_id": ["resource_created"],
+        "project_id": ["prj-dg-devops-test"],
+        "principal_email": ["a@b.com"],
+        "resource_name": ["projects/p"],
+    }
 
 
 def test_handle_finding_omits_mute_url_when_service_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:

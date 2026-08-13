@@ -89,7 +89,14 @@ def _cmd_list(_args: argparse.Namespace) -> int:
     now = datetime.now(UTC)
     for record in sorted(records, key=lambda r: r.expire_at):
         status = "ACTIVE" if record.expire_at > now else "EXPIRED (pending Firestore TTL cleanup)"
-        scope = f"project {record.project_id}" if record.project_id else "org-wide"
+        if record.principal_email:
+            scope = f"project {record.project_id}, principal {record.principal_email}"
+        elif record.resource_name:
+            scope = f"project {record.project_id}, resource {record.resource_name}"
+        elif record.project_id:
+            scope = f"project {record.project_id}"
+        else:
+            scope = "org-wide"
         print(f"[{status}] {record.rule_id} -- {scope}")
         print(f"  Expires: {record.expire_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         print(f"  Reason:  {record.reason}")

@@ -109,6 +109,10 @@ _PAGE_STYLE = """
            background: #0f172a; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; }
   select, input[type=text] { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #334155;
            background: #0f172a; color: #e2e8f0; font-size: 13px; box-sizing: border-box; }
+  .radio-option { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; font-size: 13px;
+           color: #e2e8f0; font-weight: normal; text-transform: none; }
+  .radio-option input { margin-top: 3px; flex-shrink: 0; }
+  .radio-option .value { display: inline; padding: 2px 6px; }
   button { width: 100%; padding: 12px; border-radius: 6px; border: none; font-size: 14px;
            font-weight: 600; cursor: pointer; margin-top: 8px; }
   .confirm { background: #ef4444; color: #fff; }
@@ -147,19 +151,59 @@ def mute_confirmation() -> Response:
 
     rule_id = request.args.get("rule_id", "")
     project_id = request.args.get("project_id") or None
+    principal_email = request.args.get("principal_email") or None
+    resource_name = request.args.get("resource_name") or None
     if not rule_id:
         return _render_page(
             title="Invalid link", body_html="<h1>Invalid link</h1><p>No rule specified.</p>", status=400
         )
 
-    scope_html = (
-        f'<div class="value">{html.escape(project_id)}</div>'
-        if project_id
-        else '<div class="value">org-wide (every monitored project)</div>'
-    )
     project_field = (
         f'<input type="hidden" name="project_id" value="{html.escape(project_id)}">' if project_id else ""
     )
+
+    # principal_email/resource_name only ever arrive alongside a project_id
+    # (see main.py's _mute_url) -- no project_id means there's nothing to
+    # narrow within, so the static project/org-wide line is all there is.
+    if project_id and (principal_email or resource_name):
+        options = [
+            (
+                '<label class="radio-option">'
+                f'<input type="radio" name="scope" value="project" checked>'
+                f'<span>Entire project &mdash; <span class="value">{html.escape(project_id)}</span></span>'
+                "</label>"
+            )
+        ]
+        if principal_email:
+            options.append(
+                '<label class="radio-option">'
+                '<input type="radio" name="scope" value="principal">'
+                f'<span>Only this principal &mdash; <span class="value">{html.escape(principal_email)}</span></span>'
+                "</label>"
+            )
+        if resource_name:
+            options.append(
+                '<label class="radio-option">'
+                '<input type="radio" name="scope" value="resource">'
+                f'<span>Only this resource &mdash; <span class="value">{html.escape(resource_name)}</span></span>'
+                "</label>"
+            )
+        scope_html = "".join(options)
+        principal_field = (
+            f'<input type="hidden" name="principal_email" value="{html.escape(principal_email)}">'
+            if principal_email
+            else ""
+        )
+        resource_field = (
+            f'<input type="hidden" name="resource_name" value="{html.escape(resource_name)}">' if resource_name else ""
+        )
+        narrowing_fields = principal_field + resource_field
+    elif project_id:
+        scope_html = f'<div class="value">{html.escape(project_id)}</div>'
+        narrowing_fields = ""
+    else:
+        scope_html = '<div class="value">org-wide (every monitored project)</div>'
+        narrowing_fields = ""
 
     body = f"""
       <h1>Mute this alert?</h1>
@@ -169,12 +213,15 @@ def mute_confirmation() -> Response:
       <form method="POST" action="/mute">
         <input type="hidden" name="rule_id" value="{html.escape(rule_id)}">
         {project_field}
+        {narrowing_fields}
         <div class="field">
           <label>Duration</label>
           <select name="duration_hours">
             <option value="1">1 hour</option>
             <option value="4" selected>4 hours</option>
             <option value="24">24 hours</option>
+            <option value="72">3 days</option>
+            <option value="168">7 days</option>
           </select>
         </div>
         <div class="field">
@@ -208,26 +255,45 @@ def mute_confirm() -> Response:
             title="Invalid request", body_html="<h1>Invalid request</h1><p>No rule specified.</p>", status=400
         )
 
+    # `scope` is which radio the admin picked (see mute_confirmation); the
+    # actual principal_email/resource_name values ride along as hidden
+    # fields regardless of which radio is checked, so only the selected
+    # one gets forwarded to create_mute -- never both at once.
+    scope = request.form.get("scope", "project")
+    principal_email = request.form.get("principal_email") or None if scope == "principal" else None
+    resource_name = request.form.get("resource_name") or None if scope == "resource" else None
+
     record = muting.create_mute(
         rule_id=rule_id,
         project_id=project_id,
         duration_hours=duration_hours,
         reason=reason,
         muted_by=caller_email,
+        principal_email=principal_email,
+        resource_name=resource_name,
     )
     logger.info(
         "alert_muted_via_web",
         extra={
             "rule_id": rule_id,
             "project_id": project_id,
+            "principal_email": principal_email,
+            "resource_name": resource_name,
             "muted_by": caller_email,
             "expire_at": record.expire_at.isoformat(),
         },
     )
-    scope = f"project {record.project_id}" if record.project_id else "org-wide"
+    if record.principal_email:
+        scope_text = f"principal {record.principal_email} in project {record.project_id}"
+    elif record.resource_name:
+        scope_text = f"resource {record.resource_name} in project {record.project_id}"
+    elif record.project_id:
+        scope_text = f"project {record.project_id}"
+    else:
+        scope_text = "org-wide"
     body = (
         '<div class="done">Muted</div>'
-        f"<p><strong>{html.escape(record.rule_id)}</strong> is now muted for {html.escape(scope)} "
+        f"<p><strong>{html.escape(record.rule_id)}</strong> is now muted for {html.escape(scope_text)} "
         f"until {html.escape(record.expire_at.strftime('%Y-%m-%d %H:%M:%S UTC'))}.</p>"
     )
     return _render_page(title="Muted", body_html=body)

@@ -37,11 +37,22 @@ def _resolve_recipients(severity: str) -> list[str]:
     return list(recipients)
 
 
-def _mute_url(rule_id: str, project_id: str | None) -> str | None:
+def _mute_url(
+    rule_id: str,
+    project_id: str | None,
+    *,
+    principal_email: str | None = None,
+    resource_name: str | None = None,
+) -> str | None:
     """Build the "Mute this alert" link from the real rule_id/project_id and
     the deployed mute-web service's URL (MUTE_SERVICE_URL, set by Terraform
     -- see terraform/modules/mute_web). None when unset, so email_template.py
     simply omits the button rather than rendering a dead link.
+
+    principal_email/resource_name (from the matched Finding, when known)
+    let mute-web offer muting narrower than "this whole project" -- only
+    included when project_id is also known, since neither means anything
+    without it (see src/muting.py's module docstring).
     """
     base_url = os.environ.get("MUTE_SERVICE_URL")
     if not base_url:
@@ -49,6 +60,10 @@ def _mute_url(rule_id: str, project_id: str | None) -> str | None:
     params = {"rule_id": rule_id}
     if project_id:
         params["project_id"] = project_id
+        if principal_email:
+            params["principal_email"] = principal_email
+        if resource_name:
+            params["resource_name"] = resource_name
     return f"{base_url.rstrip('/')}/mute?{urlencode(params)}"
 
 
@@ -62,7 +77,12 @@ def _decode_message(cloud_event: CloudEvent) -> dict[str, Any]:
 def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
     log_context = {"rule_id": finding.rule_id, "raw_log_id": finding.raw_log_id}
 
-    if muting.is_muted(finding.rule_id, event.project_id):
+    if muting.is_muted(
+        finding.rule_id,
+        event.project_id,
+        principal_email=finding.principal_email,
+        resource_name=finding.resource_name,
+    ):
         # Muting hides the email, never the record that this matched --
         # still persisted, just with no recipients/message id. Checked
         # before the Gemini call too, so a muted finding doesn't spend
@@ -91,7 +111,12 @@ def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
         fields=finding.fields,
         ai_analysis=finding.ai_analysis,
         console_url=finding.console_url,
-        mute_url=_mute_url(finding.rule_id, event.project_id),
+        mute_url=_mute_url(
+            finding.rule_id,
+            event.project_id,
+            principal_email=finding.principal_email,
+            resource_name=finding.resource_name,
+        ),
     )
 
     try:

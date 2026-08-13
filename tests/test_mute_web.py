@@ -127,6 +127,47 @@ def test_mute_get_missing_rule_id_is_rejected(client, monkeypatch: pytest.Monkey
     assert response.status_code == 400
 
 
+def test_mute_get_with_principal_and_resource_shows_scope_radio_options(
+    client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _authorize_as(monkeypatch)
+    response = client.get(
+        "/mute?rule_id=iam_policy_change&project_id=prj-a"
+        "&principal_email=attacker%40evil.example&resource_name=projects%2Fp%2Finstances%2Fvm",
+        headers={IAP_HEADER: "token"},
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert 'name="scope" value="project" checked' in body
+    assert 'name="scope" value="principal"' in body
+    assert 'name="scope" value="resource"' in body
+    assert "attacker@evil.example" in body
+    assert "projects/p/instances/vm" in body
+    assert '<input type="hidden" name="principal_email" value="attacker@evil.example">' in body
+    assert '<input type="hidden" name="resource_name" value="projects/p/instances/vm">' in body
+
+
+def test_mute_get_without_principal_or_resource_shows_plain_project_scope(
+    client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No principal/resource in the link -- nothing to narrow to, so the
+    original static scope line renders, not a single-option radio group.
+    """
+    _authorize_as(monkeypatch)
+    response = client.get(
+        "/mute?rule_id=iam_policy_change&project_id=prj-a", headers={IAP_HEADER: "token"}
+    )
+    assert response.status_code == 200
+    assert 'name="scope"' not in response.text
+
+
+def test_mute_get_offers_multi_day_duration_options(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    _authorize_as(monkeypatch)
+    response = client.get("/mute?rule_id=resource_created", headers={IAP_HEADER: "token"})
+    assert '<option value="72">3 days</option>' in response.text
+    assert '<option value="168">7 days</option>' in response.text
+
+
 def test_mute_get_never_creates_a_mute(client, monkeypatch: pytest.MonkeyPatch) -> None:
     """A GET must never have a side effect -- email link-scanners/prefetchers
     routinely fetch links automatically.
@@ -262,3 +303,87 @@ def test_mute_post_default_reason_when_omitted(client, monkeypatch: pytest.Monke
     monkeypatch.setattr(mute_web_app.muting, "create_mute", lambda **kwargs: calls.append(kwargs) or _fake_record())
     client.post("/mute", data={"rule_id": "resource_created"}, headers={IAP_HEADER: "token"})
     assert calls[0]["reason"] == "Muted via email link"
+
+
+# -----------------------------------------------------------------------
+# POST /mute -- scope selection (project / principal / resource).
+# -----------------------------------------------------------------------
+
+
+def test_mute_post_scope_principal_passes_only_principal_email(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    _authorize_as(monkeypatch)
+    calls = []
+    monkeypatch.setattr(mute_web_app.muting, "create_mute", lambda **kwargs: calls.append(kwargs) or _fake_record())
+    client.post(
+        "/mute",
+        data={
+            "rule_id": "iam_policy_change",
+            "project_id": "prj-a",
+            "scope": "principal",
+            "principal_email": "attacker@evil.example",
+            "resource_name": "projects/p/instances/vm",  # present but must be ignored -- scope says principal
+        },
+        headers={IAP_HEADER: "token"},
+    )
+    assert calls[0]["principal_email"] == "attacker@evil.example"
+    assert calls[0]["resource_name"] is None
+
+
+def test_mute_post_scope_resource_passes_only_resource_name(client, monkeypatch: pytest.MonkeyPatch) -> None:
+    _authorize_as(monkeypatch)
+    calls = []
+    monkeypatch.setattr(mute_web_app.muting, "create_mute", lambda **kwargs: calls.append(kwargs) or _fake_record())
+    client.post(
+        "/mute",
+        data={
+            "rule_id": "resource_created",
+            "project_id": "prj-a",
+            "scope": "resource",
+            "principal_email": "attacker@evil.example",  # present but must be ignored -- scope says resource
+            "resource_name": "projects/p/instances/vm",
+        },
+        headers={IAP_HEADER: "token"},
+    )
+    assert calls[0]["resource_name"] == "projects/p/instances/vm"
+    assert calls[0]["principal_email"] is None
+
+
+def test_mute_post_scope_project_ignores_principal_and_resource_even_if_present(
+    client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The admin can explicitly pick "Entire project" even when the link
+    carried a principal/resource -- both must be dropped, not silently
+    narrowed against the admin's choice.
+    """
+    _authorize_as(monkeypatch)
+    calls = []
+    monkeypatch.setattr(mute_web_app.muting, "create_mute", lambda **kwargs: calls.append(kwargs) or _fake_record())
+    client.post(
+        "/mute",
+        data={
+            "rule_id": "iam_policy_change",
+            "project_id": "prj-a",
+            "scope": "project",
+            "principal_email": "attacker@evil.example",
+            "resource_name": "projects/p/instances/vm",
+        },
+        headers={IAP_HEADER: "token"},
+    )
+    assert calls[0]["principal_email"] is None
+    assert calls[0]["resource_name"] is None
+
+
+def test_mute_post_defaults_to_project_scope_when_scope_field_missing(
+    client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Old email links (sent before this feature existed) never include a
+    `scope` field at all -- must still behave as plain project-wide muting.
+    """
+    _authorize_as(monkeypatch)
+    calls = []
+    monkeypatch.setattr(mute_web_app.muting, "create_mute", lambda **kwargs: calls.append(kwargs) or _fake_record())
+    client.post(
+        "/mute", data={"rule_id": "resource_created", "project_id": "prj-a"}, headers={IAP_HEADER: "token"}
+    )
+    assert calls[0]["principal_email"] is None
+    assert calls[0]["resource_name"] is None
