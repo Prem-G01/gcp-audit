@@ -1,0 +1,4 @@
+flask==3.*
+gunicorn==23.*
+google-auth==2.*
+google-cloud-firestore==2.*

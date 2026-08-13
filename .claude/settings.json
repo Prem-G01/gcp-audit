@@ -35,7 +35,30 @@
       "WebFetch(domain:registry.terraform.io)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(git fetch *)",
-      "Bash(bash -n /e/gcp-audit/scripts/test_all_rules.sh)"
+      "Bash(bash -n /e/gcp-audit/scripts/test_all_rules.sh)",
+      "PowerShell(ruff check src tests scripts main.py)",
+      "PowerShell(mypy src)",
+      "PowerShell(ruff check src\\\\email_template.py)",
+      "PowerShell(mypy src\\\\email_template.py)",
+      "Bash(python -m pytest tests/test_email_template.py -q)",
+      "Bash(python -c \"import yaml; d = yaml.safe_load\\(open\\('config/routing.yaml', encoding='utf-8'\\)\\); print\\('valid YAML'\\); print\\('CRITICAL recipients:', d['recipients']['CRITICAL']\\)\")",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform state list)",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform plan -no-color)",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform plan -no-color 2>&1 > /tmp/full_plan.txt; grep -E \"^  # \" /tmp/full_plan.txt)",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform import module.pubsub.google_pubsub_topic.main \"projects/prj-dg-devops-test/topics/audit-platform-logs\")",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform plan -no-color -target=module.logging.google_logging_project_sink.audit_activity -target=module.logging.google_pubsub_topic_iam_member.project_sink_writer)",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform plan -target=module.logging.google_logging_project_sink.audit_activity -target=module.logging.google_pubsub_topic_iam_member.project_sink_writer -out=interim_sink.tfplan -no-color)",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform plan -target='module.logging.google_logging_folder_sink.monitored_folder[\"159249143908\"]' -target='module.logging.google_pubsub_topic_iam_member.monitored_folder_writer[\"159249143908\"]' -out=folder_sink.tfplan -no-color)",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform plan -target='module.logging.google_logging_folder_sink.monitored_folder[\"89141185434\"]' -target='module.logging.google_pubsub_topic_iam_member.monitored_folder_writer[\"89141185434\"]' -out=nonprod_folder_sink.tfplan -no-color)",
+      "Bash(mypy src/email_template.py)",
+      "Bash(mkdir -p \"/c/Users/PREMKU~1/AppData/Local/Temp/claude/e--gcp-audit/fa8ab1d7-f48b-4171-85fa-c40b26d258a1/scratchpad\" 2>&1; echo ok)",
+      "Bash(TF_VAR_terraform_deploy_service_account_email=\"tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com\" terraform plan -target='module.firestore.google_firestore_database.audit_platform' -target='module.firestore.google_firestore_field.mute_expiry_ttl' -target='module.firestore.google_project_iam_member.runtime_datastore_viewer' -out=firestore.tfplan -no-color)",
+      "Bash(mypy scripts/mute_alert.py)"
+    ],
+    "additionalDirectories": [
+      "\\tmp",
+      "C:\\Users\\PREMKU~1\\AppData\\Local\\Temp\\claude\\e--gcp-audit\\fa8ab1d7-f48b-4171-85fa-c40b26d258a1\\scratchpad"
     ]
   }
 }

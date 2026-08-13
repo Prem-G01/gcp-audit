@@ -54,6 +54,12 @@ gemini_timeout_seconds = 20
 bq_dataset_id = "audit_platform"
 bq_table_id   = "alert_events"
 
+# Who can click the "Mute this alert" link in emails. Each entry needs its
+# IAM principal type prefix -- "user:x@domain.com" for an individual
+# account, "group:x@domain.com" for a Google Group. Add more people later
+# by appending to this list.
+mute_web_admin_members = ["user:premkumar.gunasekaran@securekloud.com"]
+
 # PLACEHOLDER -- populate after creating real Cloud Monitoring notification
 # channels (email/Slack/PagerDuty); empty means alert policies fire with no
 # one notified.

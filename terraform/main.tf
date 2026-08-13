@@ -81,6 +81,19 @@ module "firestore" {
   runtime_service_account_email = data.google_service_account.runtime.email
 }
 
+module "mute_web" {
+  source = "./modules/mute_web"
+
+  project_id                             = var.project_id
+  region                                 = var.region
+  admin_members                          = var.mute_web_admin_members
+  firestore_project_id                   = var.project_id
+  labels                                 = local.labels
+  terraform_deploy_service_account_email = var.terraform_deploy_service_account_email
+
+  depends_on = [module.firestore]
+}
+
 module "cloud_function" {
   source = "./modules/cloud_function"
 
@@ -113,6 +126,8 @@ module "cloud_function" {
   bq_dataset_id  = module.bigquery.dataset_id
   bq_table_id    = module.bigquery.table_id
   dlq_topic_name = module.pubsub.dlq_topic_name
+
+  mute_service_url = module.mute_web.service_url
 
   depends_on = [module.iam]
 }

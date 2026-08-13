@@ -235,6 +235,73 @@ def test_only_muted_rule_id_and_project_are_checked(monkeypatch: pytest.MonkeyPa
     assert seen_args == [("resource_created", "prj-target")]
 
 
+def test_mute_url_helper_builds_link_with_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MUTE_SERVICE_URL", "https://mute-web-abc123-uc.a.run.app/")
+    url = main._mute_url("resource_created", "prj-dg-devops-test")
+    assert url == "https://mute-web-abc123-uc.a.run.app/mute?rule_id=resource_created&project_id=prj-dg-devops-test"
+
+
+def test_mute_url_helper_omits_project_when_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MUTE_SERVICE_URL", "https://mute-web-abc123-uc.a.run.app")
+    url = main._mute_url("resource_created", None)
+    assert url == "https://mute-web-abc123-uc.a.run.app/mute?rule_id=resource_created"
+
+
+def test_mute_url_helper_returns_none_when_env_var_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MUTE_SERVICE_URL", raising=False)
+    assert main._mute_url("resource_created", "prj-dg-devops-test") is None
+
+
+def test_handle_finding_passes_mute_url_through_to_render_alert(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MUTE_SERVICE_URL", "https://mute-web-abc123-uc.a.run.app")
+    event = EnrichedEvent(raw_log_id="log-1", project_id="prj-dg-devops-test")
+    finding = _finding(rule_id="resource_created")
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+
+    captured = {}
+    real_render_alert = main.render_alert
+
+    def spy_render_alert(**kwargs):
+        captured.update(kwargs)
+        return real_render_alert(**kwargs)
+
+    monkeypatch.setattr(main, "render_alert", spy_render_alert)
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert captured["mute_url"] == (
+        "https://mute-web-abc123-uc.a.run.app/mute?rule_id=resource_created&project_id=prj-dg-devops-test"
+    )
+
+
+def test_handle_finding_omits_mute_url_when_service_not_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MUTE_SERVICE_URL", raising=False)
+    event = EnrichedEvent(raw_log_id="log-1")
+    finding = _finding()
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+
+    captured = {}
+    real_render_alert = main.render_alert
+
+    def spy_render_alert(**kwargs):
+        captured.update(kwargs)
+        return real_render_alert(**kwargs)
+
+    monkeypatch.setattr(main, "render_alert", spy_render_alert)
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert captured["mute_url"] is None
+
+
 def test_unexpected_exception_in_evaluate_rules_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(main, "enrich", lambda log_entry: EnrichedEvent())
 

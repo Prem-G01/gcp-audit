@@ -12,3 +12,15 @@ provider "google" {
   region                      = var.region
   impersonate_service_account = var.terraform_deploy_service_account_email
 }
+
+# Only needed for modules/mute_web's google_cloud_run_v2_service.iap_enabled,
+# which is still a Beta-launch-stage field on the GA google provider as of
+# v6.50.0 (confirmed against that exact installed version's own docs --
+# earlier attempts elsewhere in this repo to guess provider schema instead
+# of checking it directly have cost real apply-time failures, not just
+# plan-time ones).
+provider "google-beta" {
+  project                     = var.project_id
+  region                      = var.region
+  impersonate_service_account = var.terraform_deploy_service_account_email
+}

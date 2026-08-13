@@ -607,3 +607,44 @@ def test_template_e_never_shows_firewall_section_for_sa_key_rule() -> None:
         rule_id="service_account_key_created", severity="HIGH", title="Title", fields={}
     )
     assert "Firewall Configuration" not in html_body
+
+
+@pytest.mark.parametrize(
+    "rule_id,severity",
+    [
+        ("project_created", "HIGH"),  # Template A
+        ("iam_policy_change", "HIGH"),  # Template B
+        ("unclassified_admin_activity", "LOW"),  # Template C
+        ("public_iam_grant", "CRITICAL"),  # Template D
+        ("firewall_open_to_internet", "HIGH"),  # Template E
+    ],
+)
+def test_mute_button_rendered_in_every_template_when_mute_url_given(rule_id: str, severity: str) -> None:
+    mute_url = "https://mute-web-abc123-uc.a.run.app/mute?rule_id=" + rule_id
+    _subject, html_body, text_body = render_alert(
+        rule_id=rule_id, severity=severity, title="Title", fields={}, mute_url=mute_url
+    )
+    assert "Mute this alert" in html_body
+    assert f'href="{mute_url}"' in html_body
+    assert mute_url in text_body
+
+
+def test_mute_button_omitted_when_mute_url_is_none() -> None:
+    _subject, html_body, text_body = render_alert(
+        rule_id="iam_policy_change", severity="HIGH", title="Title", fields={}, mute_url=None
+    )
+    assert "Mute this alert" not in html_body
+    assert "Mute this alert" not in text_body
+
+
+def test_mute_button_omitted_for_unsafe_url_scheme() -> None:
+    _subject, html_body, text_body = render_alert(
+        rule_id="iam_policy_change",
+        severity="HIGH",
+        title="Title",
+        fields={},
+        mute_url="javascript:alert(1)",
+    )
+    assert "Mute this alert" not in html_body
+    assert "javascript:" not in html_body
+    assert "javascript:" not in text_body

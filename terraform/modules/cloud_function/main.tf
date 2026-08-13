@@ -91,6 +91,7 @@ resource "google_cloudfunctions2_function" "process_audit_log" {
       DLQ_TOPIC             = var.dlq_topic_name
       DLQ_PROJECT           = var.project_id
       FIRESTORE_PROJECT     = var.project_id
+      MUTE_SERVICE_URL      = var.mute_service_url
     }
   }
 

@@ -1,4 +1,5 @@
 -r requirements.txt
+-r mute_web/requirements.txt
 pytest==8.*
 pytest-mock==3.*
 ruff==0.*

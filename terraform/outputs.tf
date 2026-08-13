@@ -49,3 +49,13 @@ output "monitored_folder_writer_identities" {
   description = "Map of folder_id -> writer_identity, one per entry in monitored_folder_ids."
   value       = module.logging.monitored_folder_writer_identities
 }
+
+output "mute_web_service_url" {
+  description = "Also injected into the pipeline function as MUTE_SERVICE_URL."
+  value       = module.mute_web.service_url
+}
+
+output "mute_web_artifact_registry_repository" {
+  description = "Push images here (see scripts/deploy_mute_web.ps1/.sh)."
+  value       = module.mute_web.artifact_registry_repository
+}

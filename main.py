@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 from typing import Any
+from urllib.parse import urlencode
 
 import functions_framework
 from cloudevents.http import CloudEvent
@@ -33,6 +35,21 @@ def _resolve_recipients(severity: str) -> list[str]:
     recipients_config = load_routing_config().get("recipients", {})
     recipients = recipients_config.get(severity) or recipients_config.get("default") or []
     return list(recipients)
+
+
+def _mute_url(rule_id: str, project_id: str | None) -> str | None:
+    """Build the "Mute this alert" link from the real rule_id/project_id and
+    the deployed mute-web service's URL (MUTE_SERVICE_URL, set by Terraform
+    -- see terraform/modules/mute_web). None when unset, so email_template.py
+    simply omits the button rather than rendering a dead link.
+    """
+    base_url = os.environ.get("MUTE_SERVICE_URL")
+    if not base_url:
+        return None
+    params = {"rule_id": rule_id}
+    if project_id:
+        params["project_id"] = project_id
+    return f"{base_url.rstrip('/')}/mute?{urlencode(params)}"
 
 
 def _decode_message(cloud_event: CloudEvent) -> dict[str, Any]:
@@ -74,6 +91,7 @@ def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
         fields=finding.fields,
         ai_analysis=finding.ai_analysis,
         console_url=finding.console_url,
+        mute_url=_mute_url(finding.rule_id, event.project_id),
     )
 
     try:

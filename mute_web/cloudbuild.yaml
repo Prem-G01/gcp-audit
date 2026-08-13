@@ -1,0 +1,10 @@
+# Used by scripts/deploy_mute_web.ps1/.sh's `gcloud builds submit --config=...`
+# step. A plain `gcloud builds submit --tag=...` only looks for a Dockerfile
+# at the source root, but mute_web/Dockerfile needs the repo root as its
+# build context (it COPYs src/ as well as mute_web/) -- this config points
+# Cloud Build at that Dockerfile explicitly instead.
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["build", "-f", "mute_web/Dockerfile", "-t", "$_IMAGE", "."]
+images:
+  - "$_IMAGE"

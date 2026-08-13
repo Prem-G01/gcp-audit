@@ -93,3 +93,13 @@ variable "bq_table_id" {
 variable "dlq_topic_name" {
   type = string
 }
+
+variable "mute_service_url" {
+  description = <<-EOT
+    Base URL of the mute-web Cloud Run service (module.mute_web.service_url),
+    used to build the "Mute this alert" link in emails. Empty string omits
+    the button entirely (src/email_template.py's mute_url is optional).
+  EOT
+  type        = string
+  default     = ""
+}

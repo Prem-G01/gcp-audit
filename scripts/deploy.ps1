@@ -29,6 +29,10 @@ $BqTable           = "alert_events"
 $DlqTopic          = "audit-platform-dlq"
 $DlqProject        = "prj-dg-devops-test"
 $FirestoreProject  = "prj-dg-devops-test"
+# PLACEHOLDER -- fill in once the mute-web Cloud Run service is deployed
+# (terraform output mute_web_service_url). Empty omits the "Mute this
+# alert" button from emails entirely; it isn't a hard requirement.
+$MuteServiceUrl    = ""
 $FunctionName      = "process-audit-log-gmail-alerts"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -78,6 +82,6 @@ gcloud functions deploy $FunctionName `
     --timeout=120s `
     --max-instances=20 `
     --retry `
-    --set-env-vars="GMAIL_DELEGATED_SA=$ServiceAccount,GMAIL_SENDER=$GmailSender,GMAIL_SENDER_NAME=$GmailSenderName,GMAIL_MAX_ATTEMPTS=$GmailMaxAttempts,GMAIL_TIMEOUT=$GmailTimeout,CAI_CACHE_TTL_SECONDS=$CaiCacheTtl,CAI_TIMEOUT_SECONDS=$CaiTimeout,VERTEX_PROJECT=$VertexProject,VERTEX_LOCATION=$VertexLocation,GEMINI_MODEL=$GeminiModel,GEMINI_MAX_TOKENS=$GeminiMaxTokens,GEMINI_TIMEOUT=$GeminiTimeout,BQ_PROJECT=$BqProject,BQ_DATASET=$BqDataset,BQ_TABLE=$BqTable,DLQ_TOPIC=$DlqTopic,DLQ_PROJECT=$DlqProject,FIRESTORE_PROJECT=$FirestoreProject"
+    --set-env-vars="GMAIL_DELEGATED_SA=$ServiceAccount,GMAIL_SENDER=$GmailSender,GMAIL_SENDER_NAME=$GmailSenderName,GMAIL_MAX_ATTEMPTS=$GmailMaxAttempts,GMAIL_TIMEOUT=$GmailTimeout,CAI_CACHE_TTL_SECONDS=$CaiCacheTtl,CAI_TIMEOUT_SECONDS=$CaiTimeout,VERTEX_PROJECT=$VertexProject,VERTEX_LOCATION=$VertexLocation,GEMINI_MODEL=$GeminiModel,GEMINI_MAX_TOKENS=$GeminiMaxTokens,GEMINI_TIMEOUT=$GeminiTimeout,BQ_PROJECT=$BqProject,BQ_DATASET=$BqDataset,BQ_TABLE=$BqTable,DLQ_TOPIC=$DlqTopic,DLQ_PROJECT=$DlqProject,FIRESTORE_PROJECT=$FirestoreProject,MUTE_SERVICE_URL=$MuteServiceUrl"
 
 Write-Host "Done."

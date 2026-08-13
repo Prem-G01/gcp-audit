@@ -646,11 +646,15 @@ def render_alert(
     fields: Mapping[str, Any],
     ai_analysis: str | None = None,
     console_url: str | None = None,
+    mute_url: str | None = None,
 ) -> tuple[str, str, str]:
     """Render (subject, html_body, text_body) for a finding.
 
     `fields` entries whose value is None, "", or [] are omitted. Every
     interpolated value is html.escape()'d before it reaches the HTML output.
+    `mute_url` is built by the caller (main.py, from MUTE_SERVICE_URL + this
+    finding's real rule_id/project_id) -- omitted entirely (no button
+    rendered) when None, exactly like console_url.
     """
     routing_config = load_routing_config()
     accent, tint = _severity_style(severity, routing_config)
@@ -684,6 +688,7 @@ def render_alert(
         fields=visible,
         ai_analysis=ai_analysis,
         console_url=console_url,
+        mute_url=mute_url,
         generated_at=generated_at,
         alert_id=alert_id,
     )
@@ -694,6 +699,7 @@ def render_alert(
         fields=visible,
         ai_analysis=ai_analysis,
         console_url=console_url,
+        mute_url=mute_url,
         generated_at=generated_at,
         alert_id=alert_id,
     )
@@ -715,6 +721,7 @@ def _render_template_a(
     fields: list[tuple[str, Any]],
     ai_analysis: str | None,
     console_url: str | None,
+    mute_url: str | None,
     generated_at: str,
     alert_id: str,
 ) -> str:
@@ -779,6 +786,7 @@ def _render_template_a(
         [
             ("Open Cloud Console", console_url, "#0f172a", "#ffffff", "#0f172a"),
             ("IAM Policy", _iam_console_url(fields), "#ffffff", "#3b82f6", "#3b82f6"),
+            ("Mute this alert", mute_url, "#ffffff", "#b45309", "#fbbf24"),
         ]
     )
 
@@ -830,6 +838,7 @@ def _render_template_b(
     fields: list[tuple[str, Any]],
     ai_analysis: str | None,
     console_url: str | None,
+    mute_url: str | None,
     generated_at: str,
     alert_id: str,
 ) -> str:
@@ -916,6 +925,7 @@ def _render_template_b(
         [
             ("Open Cloud Console", console_url, "#1e293b", "#ffffff", "#1e293b"),
             ("IAM Policy", _iam_console_url(fields), "#ffffff", "#dc2626", "#dc2626"),
+            ("Mute this alert", mute_url, "#ffffff", "#b45309", "#fbbf24"),
         ]
     )
 
@@ -966,6 +976,7 @@ def _render_template_c(
     fields: list[tuple[str, Any]],
     ai_analysis: str | None,
     console_url: str | None,
+    mute_url: str | None,
     generated_at: str,
     alert_id: str,
 ) -> str:
@@ -1060,6 +1071,7 @@ def _render_template_c(
         [
             ("Open Cloud Console", console_url, accent, "#ffffff", accent),
             ("IAM Policy", _iam_console_url(fields), "#ffffff", "#1e293b", "#cbd5e1"),
+            ("Mute this alert", mute_url, "#ffffff", "#b45309", "#fbbf24"),
         ]
     )
 
@@ -1108,6 +1120,7 @@ def _render_template_d(
     fields: list[tuple[str, Any]],
     ai_analysis: str | None,
     console_url: str | None,
+    mute_url: str | None,
     generated_at: str,
     alert_id: str,
 ) -> str:
@@ -1176,6 +1189,7 @@ def _render_template_d(
         [
             ("Open Cloud Console", console_url, "#0f172a", "#ffffff", "#0f172a"),
             ("View Audit Log", _iam_console_url(fields), "#ffffff", "#3b82f6", "#3b82f6"),
+            ("Mute this alert", mute_url, "#ffffff", "#b45309", "#fbbf24"),
         ]
     )
 
@@ -1235,6 +1249,7 @@ def _render_template_e(
     fields: list[tuple[str, Any]],
     ai_analysis: str | None,
     console_url: str | None,
+    mute_url: str | None,
     generated_at: str,
     alert_id: str,
 ) -> str:
@@ -1366,6 +1381,7 @@ def _render_template_e(
         [
             ("Open Cloud Console", console_url, "#0f172a", "#ffffff", "#0f172a"),
             ("IAM Policy", _iam_console_url(fields), "#ffffff", accent, accent),
+            ("Mute this alert", mute_url, "#ffffff", "#b45309", "#fbbf24"),
         ]
     )
 
@@ -1407,6 +1423,7 @@ def _render_text(
     fields: list[tuple[str, Any]],
     ai_analysis: str | None,
     console_url: str | None,
+    mute_url: str | None,
     generated_at: str,
     alert_id: str,
 ) -> str:
@@ -1426,6 +1443,9 @@ def _render_text(
         lines.append("")
     if console_url and _is_safe_url(console_url):
         lines.append(f"Open in Cloud Console: {console_url}")
+        lines.append("")
+    if mute_url and _is_safe_url(mute_url):
+        lines.append(f"Mute this alert (admin access required): {mute_url}")
         lines.append("")
     lines.append(f"Generated: {generated_at}")
     lines.append("This is an automated message, do not reply.")

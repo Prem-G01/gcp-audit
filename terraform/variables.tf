@@ -233,6 +233,21 @@ variable "bq_table_id" {
   default = "alert_events"
 }
 
+# --- Mute-button web service (Cloud Run + IAP) ------------------------------
+
+variable "mute_web_admin_members" {
+  description = <<-EOT
+    Principals allowed to click the "Mute this alert" link in alert
+    emails (granted roles/iap.httpsResourceAccessor on the mute-web Cloud
+    Run service only -- see modules/mute_web). Each entry needs its IAM
+    principal type prefix, e.g. "user:name@domain.com" for an individual
+    account or "group:name@domain.com" for a Google Group. Add more
+    people later by appending to this list and re-applying.
+  EOT
+  type        = list(string)
+  default     = ["user:premkumar.gunasekaran@securekloud.com"]
+}
+
 # --- Observability -----------------------------------------------------------
 
 variable "notification_channels" {

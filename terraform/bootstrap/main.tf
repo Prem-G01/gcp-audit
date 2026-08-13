@@ -155,6 +155,13 @@ locals {
     # the least-privilege predefined role that covers database creation;
     # Firestore has no finer-grained "database admin" role.
     "roles/datastore.owner",
+    # mute-web Cloud Run service (terraform/modules/mute_web): its own
+    # Artifact Registry repo, plus the IAP IAM bindings that gate access
+    # to the admin group (google_iap_web_cloud_run_service_iam_member
+    # needs roles/iap.admin -- resourcemanager.projectIamAdmin above does
+    # not cover IAP's own IAM surface).
+    "roles/artifactregistry.admin",
+    "roles/iap.admin",
   ]
 }
 resource "google_project_iam_member" "apply_roles" {
