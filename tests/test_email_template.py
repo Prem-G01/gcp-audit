@@ -338,10 +338,40 @@ def test_gmail_dark_mode_style_block_targets_only_its_own_classes() -> None:
     assert "<style>" in html_body
     assert "[data-ogsc] .ea-key" in html_body
     assert "[data-ogsb] .ea-val" in html_body
+    assert "[data-ogsc] .ea-surface" in html_body
+    assert "[data-ogsc] .ea-text" in html_body
     assert "flex" not in html_body.split("<style>")[1].split("</style>")[0]
     assert "grid" not in html_body.split("<style>")[1].split("</style>")[0]
     assert 'class="ea-key"' in html_body
     assert 'class="ea-val"' in html_body
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "severity", "expected_template"),
+    [
+        ("public_iam_grant", "CRITICAL", "D"),
+        ("firewall_open_to_internet", "CRITICAL", "E"),
+        ("iam_policy_change", "HIGH", "B"),
+        ("project_created", "HIGH", "A"),
+        ("unclassified_admin_activity", "MEDIUM", "C"),
+    ],
+)
+def test_every_template_title_and_kpi_row_carry_gmail_dark_mode_classes(rule_id, severity, expected_template) -> None:
+    """Regression test for a real live bug, reported with a screenshot:
+    Template A's KPI row (Severity/Method/Caller IP) got the light-mode
+    explicit-white-background fix earlier, but was never given the
+    ea-surface/ea-text classes -- so it was still left to Gmail's
+    inconsistent dark-mode heuristic exactly like the ea-key/ea-val spots
+    were before that fix, while the Who/When/What info cards right below
+    it (which DID have the classes) rendered correctly. A systematic
+    sweep found the same gap in the title/summary text of every other
+    template too (AI analysis boxes, Business Impact, Key Risk Notes).
+    """
+    assert _select_template(severity, rule_id) == expected_template
+    _subject, html_body, _text_body = render_alert(
+        rule_id=rule_id, severity=severity, title="Title", fields={"Principal": "alice@example.com"}
+    )
+    assert 'class="ea-text"' in html_body or 'class="ea-surface"' in html_body
 
 
 def test_dotted_annotation_key_renders_verbatim_not_mangled() -> None:
