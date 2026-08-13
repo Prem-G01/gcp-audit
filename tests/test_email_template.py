@@ -291,6 +291,34 @@ def test_html_document_declares_light_only_color_scheme() -> None:
     assert '<meta name="supported-color-schemes" content="light">' in html_body
 
 
+@pytest.mark.parametrize(
+    ("rule_id", "severity", "expected_template"),
+    [
+        ("public_iam_grant", "CRITICAL", "D"),
+        ("firewall_open_to_internet", "CRITICAL", "E"),
+        ("iam_policy_change", "HIGH", "B"),
+        ("project_created", "HIGH", "A"),
+        ("unclassified_admin_activity", "MEDIUM", "C"),
+    ],
+)
+def test_every_template_declares_an_explicit_white_background(rule_id, severity, expected_template) -> None:
+    """Regression test for a real bug: the outermost card wrapper in every
+    template had no background-color at all (relying on it being
+    transparent and showing the ambient page/client background through) --
+    fine in light mode, but a client's dark-mode engine repaints an
+    undeclared background with ITS OWN dark color while the template's text
+    colors stay dark-on-purpose-for-light-backgrounds, making entire
+    sections illegible. Confirmed against real screenshots. Every template
+    must declare its own background explicitly rather than leaving it to
+    inherit.
+    """
+    assert _select_template(severity, rule_id) == expected_template
+    _subject, html_body, _text_body = render_alert(
+        rule_id=rule_id, severity=severity, title="Title", fields={"Nested": {"a": {"b": "deep"}}}
+    )
+    assert html_body.count("background-color:#ffffff") >= 2  # outer wrapper + at least the nested-value table
+
+
 def test_dotted_annotation_key_renders_verbatim_not_mangled() -> None:
     """Kubernetes-style annotation keys (which Cloud Run's request objects
     carry, e.g. from an UpdateService call) aren't camelCase/snake_case --

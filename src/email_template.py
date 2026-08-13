@@ -192,10 +192,12 @@ def _render_nested_value(value: Any, depth: int = 0) -> str:
         rows = "".join(
             "<tr>"
             '<td style="padding:3px 8px 3px 0;font-family:Arial,sans-serif;font-size:13px;'
-            'font-weight:bold;color:#374151;vertical-align:top;white-space:nowrap;">'
+            'font-weight:bold;color:#374151;vertical-align:top;white-space:nowrap;'
+            'background-color:#ffffff;">'
             f"{html.escape(_prettify_key(str(k)))}</td>"
             '<td style="padding:3px 0;font-family:Arial,sans-serif;font-size:13px;'
-            f'color:#111827;vertical-align:top;">{_render_nested_value(v, depth + 1)}</td>'
+            f'color:#111827;vertical-align:top;background-color:#ffffff;">'
+            f"{_render_nested_value(v, depth + 1)}</td>"
             "</tr>"
             for k, v in value.items()
         )
@@ -204,11 +206,17 @@ def _render_nested_value(value: Any, depth: int = 0) -> str:
         # very ordinary shape) actually reads as a staircase instead of one
         # visually flat wall of key/value pairs -- the original 6px was
         # imperceptible past 2 levels deep, which was the actual "not
-        # clear" problem, not information density.
+        # clear" problem, not information density. Explicit background-color
+        # on every cell (not just the outer wrapper) -- a client's dark-mode
+        # engine can repaint an individual node's background even when its
+        # ancestor already declared one, so nothing here is left transparent
+        # to inherit; that gap (not the color-scheme meta tags' absence) was
+        # the actual cause of "readable in light mode, not in dark mode."
         border_color = _NESTING_BORDER_COLORS[depth % len(_NESTING_BORDER_COLORS)]
         return (
             '<table role="presentation" cellpadding="0" cellspacing="0" '
-            f'style="border-left:3px solid {border_color};padding-left:14px;margin:4px 0;">{rows}</table>'
+            f'style="border-left:3px solid {border_color};padding-left:14px;margin:4px 0;'
+            f'background-color:#ffffff;">{rows}</table>'
         )
     if isinstance(value, list | tuple):
         if not value:
@@ -867,17 +875,19 @@ def _render_template_a(
 
     kpi_row = (
         "<tr>"
-        '<td width="34%" style="padding:12px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">'
+        '<td width="34%" style="padding:12px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;'
+        'background-color:#ffffff;">'
         '<div style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase;">'
         "Severity</div>"
         f'<div style="font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:{accent};">'
         f"{html.escape(str(severity))}</div></td>"
-        '<td width="33%" style="padding:12px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">'
+        '<td width="33%" style="padding:12px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;'
+        'background-color:#ffffff;">'
         '<div style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase;">'
         "Method</div>"
         '<div style="font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:#0f172a;">'
         f"{html.escape(str(method))}</div></td>"
-        '<td width="33%" style="padding:12px;border-bottom:1px solid #e2e8f0;">'
+        '<td width="33%" style="padding:12px;border-bottom:1px solid #e2e8f0;background-color:#ffffff;">'
         '<div style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase;">'
         "Caller IP</div>"
         '<div style="font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:#0f172a;">'
@@ -924,7 +934,8 @@ def _render_template_a(
 
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;">'
+        'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;'
+        'background-color:#ffffff;">'
         f'<tr><td style="background-color:{accent};height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>'
         '<tr><td style="background-color:#0f172a;padding:20px 20px 16px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
@@ -1065,7 +1076,8 @@ def _render_template_b(
 
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e5e7eb;">'
+        'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e5e7eb;'
+        'background-color:#ffffff;">'
         '<tr><td style="background-color:#1e293b;padding:10px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
         '<td style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#ffffff;">'
@@ -1215,7 +1227,8 @@ def _render_template_c(
 
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;">'
+        'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;'
+        'background-color:#ffffff;">'
         '<tr><td style="background-color:#1e293b;padding:8px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
         '<td style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#ffffff;">'
@@ -1318,7 +1331,7 @@ def _render_template_d(
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;border-radius:10px;'
-        'overflow:hidden;">'
+        'overflow:hidden;background-color:#ffffff;">'
         f'<tr><td style="background-color:{accent};height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>'
         '<tr><td style="background-color:#0f172a;padding:16px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
@@ -1510,7 +1523,7 @@ def _render_template_e(
     return (
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
         'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;border-radius:10px;'
-        'overflow:hidden;">'
+        'overflow:hidden;background-color:#ffffff;">'
         '<tr><td style="background-color:#0f172a;padding:10px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
         '<td style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#ffffff;">'
