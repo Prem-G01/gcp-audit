@@ -53,9 +53,12 @@ recipients:
   MEDIUM:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
+    - kalpana.babu@securekloud.com
   LOW:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
   INFO:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
