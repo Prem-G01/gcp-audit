@@ -515,11 +515,45 @@ _PLAIN_ENGLISH_TITLES: dict[str, str] = {
     "federated_identity_action": "External identity performed a privileged action",
     "project_created": "New GCP project created",
     "unclassified_admin_activity": "Administrative activity detected",
+    "resource_created": "A cloud resource was created",
+    "resource_deleted": "A cloud resource was deleted",
 }
 
 
 def _plain_english_title(rule_id: str, title: str) -> str:
     return _PLAIN_ENGLISH_TITLES.get(rule_id, title)
+
+
+def _plain_english_summary(fields: list[tuple[str, Any]]) -> str:
+    """A one-sentence, jargon-free summary of what happened -- "who did what
+    to what, where" -- derived only from real field data (Principal/
+    Resource/Project), never fabricated. Shown at the top of every
+    template (not just D) so a non-technical reader gets the gist without
+    needing to parse the structured/technical sections below; a technical
+    reader still has all of those sections unchanged.
+
+    Returns the raw (unescaped) sentence -- HTML call sites must
+    html.escape() it themselves, same as every other interpolated value in
+    this module; _render_text (plain text) uses it as-is.
+    """
+    principal = (
+        _field_value(fields, "Principal")
+        or _field_value(fields, "Principal Subject")
+        or _field_value(fields, "Principal Subject (Federated Identity)")
+    )
+    resource = (
+        _field_value(fields, "Resource")
+        or _field_value(fields, "Firewall Rule")
+        or _field_value(fields, "Service Account")
+        or _field_value(fields, "New Project Resource")
+    )
+    project = _field_value(fields, "Project")
+    parts = [f"{principal} made a change" if principal else "A change was made"]
+    if resource:
+        parts.append(f"to {resource}")
+    if project:
+        parts.append(f"in project {project}")
+    return " ".join(parts) + "."
 
 
 _BUSINESS_IMPACT: dict[str, tuple[str, str, str]] = {
@@ -905,6 +939,8 @@ def _render_template_a(
         f'margin-top:8px;">{title_e}</div>'
         f'<div style="color:#94a3b8;font-family:Arial,sans-serif;font-size:13px;margin-top:4px;">'
         f"Rule: {rule_id_e} &middot; Alert: {html.escape(alert_id)}</div>"
+        f'<div style="color:#e2e8f0;font-family:Arial,sans-serif;font-size:14px;margin-top:10px;'
+        f'line-height:1.5;">{html.escape(_plain_english_summary(fields))}</div>'
         "</td></tr>"
         f'<tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">{kpi_row}'
         "</table></td></tr>"
@@ -1045,6 +1081,8 @@ def _render_template_b(
         f'margin-top:8px;">{title_e}</div>'
         f'<div style="font-family:Arial,sans-serif;font-size:13px;color:#991b1b;margin-top:2px;">'
         f"Rule: {rule_id_e} &middot; {html.escape(generated_at)}</div>"
+        f'<div style="font-family:Arial,sans-serif;font-size:14px;color:#7f1d1d;margin-top:10px;'
+        f'line-height:1.5;">{html.escape(_plain_english_summary(fields))}</div>'
         "</td></tr></table></td></tr>"
         f"{two_col}{change_html}{leftover_html}{ioc_html}{ai_html}{buttons_html}"
         '<tr><td style="padding:14px 20px;border-top:1px solid #e5e7eb;background-color:#f8fafc;">'
@@ -1189,7 +1227,10 @@ def _render_template_c(
         f'<div style="font-family:Arial,sans-serif;font-size:22px;font-weight:bold;color:#0f172a;'
         f'margin-top:8px;">{title_e}</div>'
         f'<div style="font-family:Arial,sans-serif;font-size:13px;color:#64748b;margin-top:4px;">'
-        f"{subtitle}</div></td></tr>"
+        f"{subtitle}</div>"
+        f'<div style="font-family:Arial,sans-serif;font-size:14px;color:#334155;margin-top:10px;'
+        f'line-height:1.5;">{html.escape(_plain_english_summary(fields))}</div>'
+        "</td></tr>"
         f"{zebra_html}{change_html}{ai_html}{buttons_html}"
         '<tr><td style="padding:14px 20px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
@@ -1226,24 +1267,7 @@ def _render_template_d(
     plain_title = html.escape(_plain_english_title(rule_id, title))
     rule_id_e = html.escape(str(rule_id))
 
-    principal = (
-        _field_value(fields, "Principal")
-        or _field_value(fields, "Principal Subject")
-        or _field_value(fields, "Principal Subject (Federated Identity)")
-    )
-    resource = (
-        _field_value(fields, "Resource")
-        or _field_value(fields, "Firewall Rule")
-        or _field_value(fields, "Service Account")
-        or _field_value(fields, "New Project Resource")
-    )
-    project = _field_value(fields, "Project")
-    summary_parts = [f"{principal} made a change" if principal else "A change was made"]
-    if resource:
-        summary_parts.append(f"to {resource}")
-    if project:
-        summary_parts.append(f"in project {project}")
-    summary_e = html.escape(" ".join(summary_parts) + ".")
+    summary_e = html.escape(_plain_english_summary(fields))
 
     impact_html = "".join(
         '<td width="33%" style="padding:12px;vertical-align:top;">'
@@ -1499,6 +1523,8 @@ def _render_template_e(
         f'margin-top:8px;">{title_e}</div>'
         '<div style="font-family:Arial,sans-serif;font-size:13px;color:#475569;margin-top:2px;">'
         f"Rule: {rule_id_e} &middot; {html.escape(generated_at)}</div>"
+        f'<div style="font-family:Arial,sans-serif;font-size:14px;color:#0f172a;margin-top:10px;'
+        f'line-height:1.5;">{html.escape(_plain_english_summary(fields))}</div>'
         "</td></tr>"
         f"{zebra_html}{firewall_html}{sa_key_html}{ioc_html}{ai_html}{remediation_html}{buttons_html}"
         '<tr><td style="padding:14px 20px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">'
@@ -1525,7 +1551,14 @@ def _render_text(
     generated_at: str,
     alert_id: str,
 ) -> str:
-    lines = [f"[{severity}] {title}", f"Rule: {rule_id}", f"Alert ID: {alert_id}", ""]
+    lines = [
+        f"[{severity}] {title}",
+        f"Rule: {rule_id}",
+        f"Alert ID: {alert_id}",
+        "",
+        _plain_english_summary(fields),
+        "",
+    ]
     sections = _group_fields_into_sections(fields)
     if sections:
         for name, rows in sections:

@@ -15,6 +15,7 @@ from src.email_template import (
     _firewall_remediation_commands,
     _format_timestamp,
     _is_rfc1918,
+    _plain_english_summary,
     _plain_english_title,
     _prettify_key,
     _resource_name_segment,
@@ -344,6 +345,56 @@ def test_prettify_key_empty_string_returns_unchanged() -> None:
 
 def test_prettify_key_returns_dotted_slashed_key_verbatim() -> None:
     assert _prettify_key("autoscaling.knative.dev/maxScale") == "autoscaling.knative.dev/maxScale"
+
+
+# -----------------------------------------------------------------------
+# Plain-English summary -- one jargon-free sentence, on every template
+# (not just D), derived only from real field data, never fabricated.
+# -----------------------------------------------------------------------
+
+
+def test_plain_english_summary_with_principal_resource_and_project() -> None:
+    fields = [("Principal", "alice@example.com"), ("Resource", "projects/p/disks/d1"), ("Project", "prj-a")]
+    assert _plain_english_summary(fields) == (
+        "alice@example.com made a change to projects/p/disks/d1 in project prj-a."
+    )
+
+
+def test_plain_english_summary_falls_back_when_principal_missing() -> None:
+    fields = [("Resource", "projects/p/disks/d1")]
+    assert _plain_english_summary(fields) == "A change was made to projects/p/disks/d1."
+
+
+def test_plain_english_summary_with_no_matching_fields_at_all() -> None:
+    assert _plain_english_summary([]) == "A change was made."
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "severity", "expected_template"),
+    [
+        ("public_iam_grant", "CRITICAL", "D"),
+        ("firewall_open_to_internet", "CRITICAL", "E"),
+        ("iam_policy_change", "HIGH", "B"),
+        ("project_created", "HIGH", "A"),
+        ("unclassified_admin_activity", "LOW", "C"),
+    ],
+)
+def test_plain_english_summary_appears_on_every_template(rule_id, severity, expected_template) -> None:
+    """The summary line must render on all 5 layouts, not just D -- this
+    parametrization forces each one via its real rule_id/severity mapping
+    (see _select_template) so the assertion actually exercises each
+    template's own header code, not just whichever one the default
+    severity/rule_id in other tests happens to select.
+    """
+    assert _select_template(severity, rule_id) == expected_template
+    _subject, html_body, text_body = render_alert(
+        rule_id=rule_id,
+        severity=severity,
+        title="Title",
+        fields={"Principal": "alice@example.com", "Resource": "some-resource", "Project": "prj-a"},
+    )
+    assert "alice@example.com made a change to some-resource in project prj-a." in html_body
+    assert "alice@example.com made a change to some-resource in project prj-a." in text_body
 
 
 # --- template selection -------------------------------------------------
