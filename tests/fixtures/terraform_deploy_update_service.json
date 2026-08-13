@@ -1,0 +1,25 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "run.googleapis.com",
+    "methodName": "google.cloud.run.v2.Services.UpdateService",
+    "resourceName": "namespaces/prj-dg-devops-test/services/mute-web",
+    "authenticationInfo": {
+      "principalEmail": "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
+    },
+    "requestMetadata": {
+      "callerIp": "private",
+      "callerSuppliedUserAgent": "Terraform/1.9.0 terraform-provider-google/6.50.2"
+    }
+  },
+  "resource": {
+    "type": "cloud_run_revision",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-13T03:52:03Z",
+  "insertId": "fixture-terraform-update-service-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

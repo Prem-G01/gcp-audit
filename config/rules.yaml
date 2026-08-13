@@ -402,6 +402,20 @@ rules:
               - field: principal_email
                 op: equals
                 value: "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
+        - not:
+            all_of:
+              # Same self-noise, different resource: mute-web is a direct
+              # Cloud Run service (not Cloud-Functions-backed), so its own
+              # Terraform-driven updates show up as Services.UpdateService
+              # instead of FunctionService.UpdateFunction. Same scoping
+              # logic -- known deploy SA only, any other principal stays
+              # fully alertable.
+              - field: method_name
+                op: contains
+                value: "Services.UpdateService"
+              - field: principal_email
+                op: equals
+                value: "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject

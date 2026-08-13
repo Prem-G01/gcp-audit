@@ -347,6 +347,24 @@ def test_unclassified_admin_activity_still_fires_for_update_function_from_other_
     assert "unclassified_admin_activity" in {f.rule_id for f in findings}
 
 
+def test_unclassified_admin_activity_excludes_own_terraform_mute_web_deploy(load_fixture) -> None:
+    """Same self-noise as the UpdateFunction case, different resource --
+    mute-web is a direct Cloud Run service (not Cloud-Functions-backed), so
+    its own Terraform-driven updates show up as Services.UpdateService
+    instead. It fires constantly because of the recurring launch_stage
+    metadata drift every `gcloud run deploy` leaves for Terraform to correct.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("terraform_deploy_update_service.json"))
+    findings = engine.evaluate_rules(event)
+    assert "unclassified_admin_activity" not in {f.rule_id for f in findings}
+
+
+def test_unclassified_admin_activity_still_fires_for_update_service_from_other_principal(load_fixture) -> None:
+    event = EnrichedEvent.from_log_entry(load_fixture("unexpected_update_service.json"))
+    findings = engine.evaluate_rules(event)
+    assert "unclassified_admin_activity" in {f.rule_id for f in findings}
+
+
 def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
     covered = {
         "iam_policy_change",

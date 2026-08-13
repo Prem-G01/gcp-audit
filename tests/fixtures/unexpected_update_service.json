@@ -1,0 +1,25 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "run.googleapis.com",
+    "methodName": "google.cloud.run.v2.Services.UpdateService",
+    "resourceName": "namespaces/prj-dg-devops-test/services/mute-web",
+    "authenticationInfo": {
+      "principalEmail": "attacker@evil.example"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.99",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    }
+  },
+  "resource": {
+    "type": "cloud_run_revision",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-13T03:52:03Z",
+  "insertId": "fixture-unexpected-update-service-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}
