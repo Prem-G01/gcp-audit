@@ -319,6 +319,31 @@ def test_every_template_declares_an_explicit_white_background(rule_id, severity,
     assert html_body.count("background-color:#ffffff") >= 2  # outer wrapper + at least the nested-value table
 
 
+def test_gmail_dark_mode_style_block_targets_only_its_own_classes() -> None:
+    """Regression test for a real live bug: Gmail's automatic dark-mode
+    conversion applied inconsistently across structurally-identical
+    content in two emails for the SAME rule/template -- one fully
+    converted and legible, one with the label/value row pattern left
+    white inside an otherwise-dark shell. [data-ogsc]/[data-ogsb] are
+    attributes only Gmail ever injects, so this block is inert on every
+    other client (Outlook's Word engine included) -- it must contain no
+    layout rules, only the two approved classes' background/color.
+    """
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1",
+        severity="HIGH",
+        title="Title",
+        fields={"Principal": "alice@example.com", "Method": "SetIamPolicy"},
+    )
+    assert "<style>" in html_body
+    assert "[data-ogsc] .ea-key" in html_body
+    assert "[data-ogsb] .ea-val" in html_body
+    assert "flex" not in html_body.split("<style>")[1].split("</style>")[0]
+    assert "grid" not in html_body.split("<style>")[1].split("</style>")[0]
+    assert 'class="ea-key"' in html_body
+    assert 'class="ea-val"' in html_body
+
+
 def test_dotted_annotation_key_renders_verbatim_not_mangled() -> None:
     """Kubernetes-style annotation keys (which Cloud Run's request objects
     carry, e.g. from an UpdateService call) aren't camelCase/snake_case --

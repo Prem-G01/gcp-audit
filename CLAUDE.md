@@ -25,7 +25,12 @@ src/persistence/bigquery.py, main.py
 - NEVER use SendGrid, Mailgun, SES, or smtplib. Gmail API only.
 - The only OAuth scope in this repo is https://www.googleapis.com/auth/gmail.send
 - Every audit-log-derived value passes through html.escape() before templating.
-- Email HTML: inline CSS and <table> layout only. No <style>, flexbox, or grid.
+- Email HTML: inline CSS and <table> layout only. No <style>, flexbox, or grid,
+  except one approved exception in `_wrap_html_document` (src/email_template.py):
+  a `<style>` block containing only Gmail's proprietary `[data-ogsc]`/`[data-ogsb]`
+  dark-mode override selectors -- inert on every other client, since only Gmail
+  ever injects those attributes. No layout rules (flexbox/grid/positioning) may
+  go in it; background-color/color overrides only.
 - Rules, routing, severity styling live in config/*.yaml. No logic in Python.
 - No eval() or exec() on config content.
 - logging with structured extra fields. No print() in deployed code

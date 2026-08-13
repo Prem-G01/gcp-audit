@@ -7,14 +7,16 @@ focused), "C" (Clean Enterprise, default), "D" (Executive Summary, plain-
 English framing for public_iam_grant/billing_account_changed), and "E"
 (Engineer Detail, technical breakdown + remediation commands for
 firewall_open_to_internet/service_account_key_created). All layouts use
-inline CSS and <table> markup only (no <style> blocks, no flexbox/grid) --
-CLAUDE.md forbids <style> here for Outlook/Gmail rendering compatibility,
-which also means there's no sender-controlled dark-mode support: real
-email dark-mode comes from clients auto-inverting light content, not
-`@media (prefers-color-scheme: dark)` (most clients that matter here,
-Outlook desktop included, ignore it anyway). Every value that originates
-from an audit log entry is attacker-influenced and is passed through
-html.escape() before reaching the HTML template.
+inline CSS and <table> markup only (no flexbox/grid) -- CLAUDE.md forbids
+general <style> blocks here for Outlook/Gmail rendering compatibility.
+One narrow, explicitly-approved exception exists (see
+_wrap_html_document): a <style> block containing only Gmail's
+proprietary [data-ogsc]/[data-ogsb] dark-mode override selectors, inert
+on every other client since only Gmail ever injects those attributes.
+`@media (prefers-color-scheme: dark)` is still not used -- most clients
+that matter here, Outlook desktop included, ignore it. Every value that
+originates from an audit log entry is attacker-influenced and is passed
+through html.escape() before reaching the HTML template.
 
 Severity colours are NOT hardcoded here -- they come from
 config/routing.yaml's severity_styles, per this repo's "no logic in Python"
@@ -191,11 +193,11 @@ def _render_nested_value(value: Any, depth: int = 0) -> str:
             return '<span style="color:#6b7280;">(empty)</span>'
         rows = "".join(
             "<tr>"
-            '<td style="padding:3px 8px 3px 0;font-family:Arial,sans-serif;font-size:13px;'
+            '<td class="ea-key" style="padding:3px 8px 3px 0;font-family:Arial,sans-serif;font-size:13px;'
             'font-weight:bold;color:#374151;vertical-align:top;white-space:nowrap;'
             'background-color:#ffffff;">'
             f"{html.escape(_prettify_key(str(k)))}</td>"
-            '<td style="padding:3px 0;font-family:Arial,sans-serif;font-size:13px;'
+            '<td class="ea-val" style="padding:3px 0;font-family:Arial,sans-serif;font-size:13px;'
             f'color:#111827;vertical-align:top;background-color:#ffffff;">'
             f"{_render_nested_value(v, depth + 1)}</td>"
             "</tr>"
@@ -267,14 +269,22 @@ def _render_field_rows(fields: list[tuple[str, Any]], row_bg: str) -> str:
         value_html = (
             _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else _escape_scalar(value)
         )
+        # class="ea-key"/"ea-val" carry no visual meaning by themselves --
+        # they exist only so the [data-ogsc]/[data-ogsb] rules in <head>
+        # (see _wrap_html_document) can target this exact label/value
+        # pattern when Gmail applies its own dark mode, which otherwise
+        # converts some structurally-identical tables in an email and
+        # leaves others untouched -- confirmed live, two emails for the
+        # SAME rule/template, one fully dark-and-legible, one with this
+        # exact row pattern stuck white inside an otherwise-dark shell.
         rows.append(
             "<tr>"
-            f'<td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;'
+            f'<td class="ea-key" style="padding:6px 12px;border-bottom:1px solid #e5e7eb;'
             f'background-color:{row_bg};font-family:Arial,sans-serif;font-size:14px;'
             'font-weight:bold;color:#111827;vertical-align:top;width:35%;">'
             f"{html.escape(str(key))}</td>"
-            '<td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;'
-            'font-family:Arial,sans-serif;font-size:14px;color:#111827;'
+            f'<td class="ea-val" style="padding:6px 12px;border-bottom:1px solid #e5e7eb;'
+            f'background-color:{row_bg};font-family:Arial,sans-serif;font-size:14px;color:#111827;'
             f'vertical-align:top;">{value_html}</td>'
             "</tr>"
         )
@@ -739,10 +749,20 @@ def _wrap_html_document(*, subject: str, severity: str, title: str, body_html: s
     """Wrap a template's inner <table> markup in a full HTML document --
     <!doctype>/<html>/<head> with charset + viewport meta tags, plus a
     hidden preheader (the inbox-list preview snippet most clients show
-    next to the subject, read before any visible body content). Meta tags
-    aren't a <style> block, so this stays within CLAUDE.md's "inline CSS
-    and <table> layout only" constraint -- no CSS rule lives outside an
-    inline `style=` attribute anywhere in this module.
+    next to the subject, read before any visible body content).
+
+    Contains ONE deliberate, narrow exception to CLAUDE.md's "inline CSS
+    and <table> layout only, no <style> blocks" rule: a <style> block
+    containing ONLY Gmail's proprietary [data-ogsc]/[data-ogsb] dark-mode
+    override selectors (see below). That rule exists to keep Outlook's
+    Word rendering engine predictable -- this block poses no risk to that,
+    because [data-ogsc]/[data-ogsb] are attributes GMAIL ITSELF injects
+    into the DOM when its automatic dark-mode conversion engages; no other
+    client (Outlook included) ever adds them, so on every other client
+    these selectors simply never match anything and the block is inert.
+    It contains no layout rules (no flexbox/grid/positioning) -- only
+    background-color/color overrides for the two classes below. Approved
+    explicitly for this narrow case, not a general reopening of <style>.
 
     subject/severity/title are already attacker-influenced (from the
     finding) by the time they reach here -- html.escape()'d same as every
@@ -765,6 +785,20 @@ def _wrap_html_document(*, subject: str, severity: str, title: str, body_html: s
         '<meta name="color-scheme" content="light">'
         '<meta name="supported-color-schemes" content="light">'
         f"<title>{html.escape(subject)}</title>"
+        # Gmail's own dark-mode conversion applies inconsistently across
+        # structurally identical content within the same email -- confirmed
+        # live: two emails for the same rule/template, one fully converted
+        # and legible, one with this exact label/value row pattern
+        # (class="ea-key"/"ea-val", used by _render_field_rows and the
+        # Template C/E zebra rows) left white inside an otherwise-dark
+        # shell. Forces a consistent, deliberately-chosen dark rendering
+        # instead of leaving it to that inconsistent heuristic.
+        "<style>"
+        "[data-ogsc] .ea-key,[data-ogsb] .ea-key,"
+        "[data-ogsc] .ea-val,[data-ogsb] .ea-val{"
+        "background-color:#1e293b !important;color:#e2e8f0 !important;"
+        "}"
+        "</style>"
         "</head>"
         '<body style="margin:0;padding:0;background-color:#f3f4f6;">'
         '<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;'
@@ -1153,10 +1187,10 @@ def _render_template_c(
         )
         zebra_rows.append(
             "<tr>"
-            f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
+            f'<td class="ea-key" style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
             'font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:#0f172a;width:35%;">'
             f"{html.escape(str(key))}</td>"
-            f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
+            f'<td class="ea-val" style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
             f'font-family:Arial,sans-serif;font-size:14px;color:#0f172a;">{value_html}</td>'
             "</tr>"
         )
@@ -1401,10 +1435,10 @@ def _render_template_e(
         )
         zebra_rows.append(
             "<tr>"
-            f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
+            f'<td class="ea-key" style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
             'font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:#0f172a;width:35%;">'
             f"{html.escape(str(key))}</td>"
-            f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
+            f'<td class="ea-val" style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
             f'font-family:monospace;font-size:13px;color:#0f172a;">{value_html}</td>'
             "</tr>"
         )
