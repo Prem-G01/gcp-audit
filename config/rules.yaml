@@ -378,7 +378,7 @@ rules:
       nor any word in that whitelist, so a VM resize never alerted at all.
       Exists so nothing mutating is ever silently unalerted -- now actually
       true.
-    severity: LOW
+    severity: MEDIUM
     ai_analysis: false
     console_url_template: >-
       https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
