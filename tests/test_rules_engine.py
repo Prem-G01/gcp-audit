@@ -326,6 +326,19 @@ def test_resource_created_excludes_cloud_build_create_build(load_fixture) -> Non
     assert findings == []
 
 
+def test_resource_created_excludes_network_connectivity_test(load_fixture) -> None:
+    """Network Intelligence Center's Connectivity Tests are diagnostics
+    simulations (does this path reach that endpoint?) -- not real
+    infrastructure, no cost, no attacker capability. Confirmed live: this
+    exact event's deeply nested request payload (source/destination
+    endpoints, protocol, labels) rendered as an unreadable wall of detail
+    for something that was never security-relevant.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("connectivity_test_created.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
+
+
 def test_unclassified_admin_activity_excludes_own_terraform_deploy(load_fixture) -> None:
     """This platform's own Terraform-driven deploys call UpdateFunction on
     this very function every apply -- routine and expected from the known

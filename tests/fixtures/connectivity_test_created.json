@@ -1,0 +1,33 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "networkmanagement.googleapis.com",
+    "methodName": "google.cloud.networkmanagement.v1.ReachabilityService.CreateConnectivityTest",
+    "resourceName": "projects/prj-dg-ahfl-apps-prod/locations/global/connectivityTests/Troubleshoot-network-538CE707-FE1C-4DFD-871D-B196FF38DFFE",
+    "authenticationInfo": {
+      "principalEmail": "ragulrathna.thanigachalam@securekloud.com"
+    },
+    "requestMetadata": {
+      "callerIp": "157.51.134.252",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "request": {
+      "@type": "type.googleapis.com/google.cloud.networkmanagement.v1.CreateConnectivityTestRequest",
+      "resource": {
+        "source": {"instance": "projects/prj-dg-ahfl-apps-prod/zones/asia-south1-a/instances/vm-a"},
+        "destination": {"instance": "projects/prj-dg-ahfl-apps-prod/zones/asia-south1-a/instances/vm-b", "port": 443},
+        "protocol": "TCP"
+      }
+    }
+  },
+  "resource": {
+    "type": "network_management_connectivity_test",
+    "labels": {
+      "project_id": "prj-dg-ahfl-apps-prod"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-13T20:22:06Z",
+  "insertId": "fixture-connectivity-test-001",
+  "logName": "projects/prj-dg-ahfl-apps-prod/logs/cloudaudit.googleapis.com%2Factivity"
+}

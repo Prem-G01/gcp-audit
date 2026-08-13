@@ -587,6 +587,19 @@ rules:
             # below would otherwise dump the entire Build object (every
             # GOOGLE_* substitution var, image labels, tags) as noise.
             value: "CloudBuild.CreateBuild"
+        - not:
+            field: method_name
+            op: contains
+            # Network Intelligence Center's Connectivity Tests are network
+            # diagnostics simulations (does this path reach that endpoint?)
+            # -- not real infrastructure, no cost, no attacker capability.
+            # Its request payload is also inherently deep/sprawling (source
+            # + destination endpoints, protocol, labels, related test
+            # config), which made "Requested Change" render as a wall of
+            # nested detail for an event that was never security-relevant
+            # in the first place. Confirmed live -- see the screenshot that
+            # prompted this exclusion.
+            value: "ReachabilityService.CreateConnectivityTest"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
