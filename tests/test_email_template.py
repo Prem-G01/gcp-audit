@@ -205,6 +205,91 @@ def test_empty_nested_dict_and_list_render_without_raising() -> None:
     assert "Scalar" in html_body
 
 
+def test_very_long_scalar_value_is_truncated() -> None:
+    """A single oversized field value (a real audit log field can legitimately
+    be a multi-KB blob) must not blow the whole email up -- truncated with a
+    visible "chars total" marker instead of rendered in full.
+    """
+    huge_value = "x" * 5000
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1", severity="HIGH", title="Title", fields={"Some Field": huge_value}
+    )
+    assert "x" * 5000 not in html_body
+    assert "(5000 chars total)" in html_body
+
+
+def test_truncation_does_not_split_an_html_entity() -> None:
+    """Truncating must happen on the raw string BEFORE html.escape() -- doing
+    it after could cut an entity reference in half (e.g. "&amp;" -> "&am"),
+    producing broken markup.
+    """
+    # Place a literal "&" right at the truncation boundary.
+    value = ("y" * (500 - 1)) + "&" + ("z" * 100)
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1", severity="HIGH", title="Title", fields={"Some Field": value}
+    )
+    # A split entity would leave a bare "&am" or similar with no ";" -- confirm
+    # the escaped ampersand is either whole ("&amp;") or was cut before it,
+    # never mangled.
+    assert "&am " not in html_body
+    assert "&amz" not in html_body
+
+
+def test_long_list_is_capped_with_a_remaining_count() -> None:
+    """A list with more items than _MAX_LIST_ITEMS renders only the cap, plus
+    a visible "and N more" marker -- not all of them.
+    """
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1",
+        severity="HIGH",
+        title="Title",
+        fields={"Tags": [f"tag-{i}" for i in range(30)]},
+    )
+    assert "tag-0" in html_body
+    assert "tag-19" in html_body
+    assert "tag-20" not in html_body
+    assert "and 10 more" in html_body
+
+
+def test_short_list_is_not_capped() -> None:
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1", severity="HIGH", title="Title", fields={"Tags": ["a", "b", "c"]}
+    )
+    assert "more</div>" not in html_body
+
+
+def test_html_body_is_a_full_document_with_charset_and_viewport() -> None:
+    _subject, html_body, _text_body = render_alert(rule_id="R1", severity="HIGH", title="Title", fields={})
+    assert html_body.startswith("<!doctype html>")
+    assert '<meta charset="utf-8">' in html_body
+    assert '<meta name="viewport" content="width=device-width, initial-scale=1.0">' in html_body
+    assert html_body.rstrip().endswith("</html>")
+
+
+def test_html_body_includes_hidden_preheader_matching_severity_and_title() -> None:
+    """The preheader is the inbox-list preview snippet shown next to the
+    subject, before the email is opened -- must be present and hidden
+    (never visible in the rendered body itself).
+    """
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1", severity="HIGH", title="Suspicious activity detected", fields={}
+    )
+    assert "display:none" in html_body
+    assert "HIGH: Suspicious activity detected" in html_body
+
+
+def test_html_document_declares_light_only_color_scheme() -> None:
+    """Every color in every template is hardcoded per-severity, never
+    theme-aware -- these meta tags stop a client's automatic dark-mode
+    inversion from selectively flipping some hardcoded colors and not
+    others, which would break contrast in ways the templates never designed
+    for.
+    """
+    _subject, html_body, _text_body = render_alert(rule_id="R1", severity="HIGH", title="Title", fields={})
+    assert '<meta name="color-scheme" content="light">' in html_body
+    assert '<meta name="supported-color-schemes" content="light">' in html_body
+
+
 def test_prettify_key_camel_case() -> None:
     assert _prettify_key("principalSubject") == "Principal Subject"
     assert _prettify_key("sourceRanges") == "Source Ranges"

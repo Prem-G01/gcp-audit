@@ -49,6 +49,8 @@ CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "routing.yaml"
 _FALLBACK_ACCENT = "#6b7280"
 _FALLBACK_TINT = "#f3f4f6"
 _MAX_NESTED_RENDER_DEPTH = 6
+_MAX_SCALAR_LENGTH = 500
+_MAX_LIST_ITEMS = 20
 
 
 @lru_cache(maxsize=8)
@@ -137,14 +139,35 @@ def _prettify_key(key: str) -> str:
     return " ".join(w[:1].upper() + w[1:] if w[:1].islower() else w for w in words)
 
 
+def _escape_scalar(value: Any) -> str:
+    """str() + truncate + html.escape() a scalar field value, in that order.
+
+    Truncating BEFORE escaping (not after) matters -- truncating the
+    escaped string could cut an entity reference in half (e.g. "&amp;"
+    -> "&am"), producing broken/mojibake output in the email.
+
+    These values originate from audit log entries -- attacker-influenced,
+    and with no inherent size limit (a single request field can legitimately
+    be a multi-KB blob). Without this cap, one oversized value blows up the
+    whole email into something unreadable, the same failure mode a huge
+    nested dict/list has -- see _MAX_NESTED_RENDER_DEPTH and
+    _MAX_LIST_ITEMS.
+    """
+    text = str(value)
+    if len(text) > _MAX_SCALAR_LENGTH:
+        text = f"{text[:_MAX_SCALAR_LENGTH]}… ({len(text)} chars total)"
+    return html.escape(text)
+
+
 def _render_nested_value(value: Any, depth: int = 0) -> str:
     """Render a dict/list field value as a nested HTML table/list.
 
     Depth-capped -- these values originate from audit log entries, which are
-    attacker-influenced. Every leaf still passes through html.escape().
+    attacker-influenced. Every leaf still passes through _escape_scalar()
+    (html.escape() plus a length cap -- see its docstring).
     """
     if depth > _MAX_NESTED_RENDER_DEPTH:
-        return html.escape(str(value))
+        return _escape_scalar(value)
     if isinstance(value, Mapping):
         if not value:
             return '<span style="color:#6b7280;">(empty)</span>'
@@ -165,12 +188,19 @@ def _render_nested_value(value: Any, depth: int = 0) -> str:
     if isinstance(value, list | tuple):
         if not value:
             return '<span style="color:#6b7280;">(empty)</span>'
-        return "".join(
+        shown, remaining = value[:_MAX_LIST_ITEMS], len(value) - _MAX_LIST_ITEMS
+        rendered = "".join(
             '<div style="padding:2px 0;border-bottom:1px dashed #e5e7eb;">'
             f"&bull; {_render_nested_value(item, depth + 1)}</div>"
-            for item in value
+            for item in shown
         )
-    return html.escape(str(value))
+        if remaining > 0:
+            rendered += (
+                '<div style="padding:2px 0;color:#6b7280;font-style:italic;">'
+                f"&hellip; and {remaining} more</div>"
+            )
+        return rendered
+    return _escape_scalar(value)
 
 
 def _contains_text(value: Any, needle: str, depth: int = 0) -> bool:
@@ -202,7 +232,7 @@ def _render_field_rows(fields: list[tuple[str, Any]], row_bg: str) -> str:
     rows = []
     for key, value in fields:
         value_html = (
-            _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else html.escape(str(value))
+            _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else _escape_scalar(value)
         )
         rows.append(
             "<tr>"
@@ -658,6 +688,15 @@ def _wrap_html_document(*, subject: str, severity: str, title: str, body_html: s
         "<head>"
         '<meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+        # Every color in every template is hardcoded per-severity (from
+        # config/routing.yaml), never theme-aware -- a client's automatic
+        # dark-mode inversion would selectively flip some of those colors
+        # (e.g. the deliberately-dark navy header) and not others, breaking
+        # contrast in ways this module never designed for. These two tags
+        # are the standard opt-out signal (Apple Mail, Outlook.com, and
+        # others honor them): render exactly as authored, don't invert.
+        '<meta name="color-scheme" content="light">'
+        '<meta name="supported-color-schemes" content="light">'
         f"<title>{html.escape(subject)}</title>"
         "</head>"
         '<body style="margin:0;padding:0;background-color:#f3f4f6;">'
@@ -1035,7 +1074,7 @@ def _render_template_c(
     for idx, (key, value) in enumerate(detail_rows):
         bg = "#ffffff" if idx % 2 == 0 else "#f8fafc"
         value_html = (
-            _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else html.escape(str(value))
+            _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else _escape_scalar(value)
         )
         zebra_rows.append(
             "<tr>"
@@ -1067,7 +1106,7 @@ def _render_template_c(
                     'font-family:Arial,sans-serif;font-size:10px;font-weight:bold;">PUBLIC</span>'
                 )
             value_html = (
-                _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else html.escape(str(value))
+                _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else _escape_scalar(value)
             )
             rows_html.append(
                 "<tr>"
@@ -1296,7 +1335,7 @@ def _render_template_e(
     for idx, (key, value) in enumerate(detail_rows):
         bg = "#ffffff" if idx % 2 == 0 else "#f8fafc"
         value_html = (
-            _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else html.escape(str(value))
+            _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else _escape_scalar(value)
         )
         zebra_rows.append(
             "<tr>"
