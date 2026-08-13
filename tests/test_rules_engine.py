@@ -365,6 +365,46 @@ def test_unclassified_admin_activity_still_fires_for_update_service_from_other_p
     assert "unclassified_admin_activity" in {f.rule_id for f in findings}
 
 
+@pytest.mark.parametrize(
+    "fixture_name",
+    ["vm_disk_resize.json", "vm_set_machine_type.json"],
+)
+def test_unclassified_admin_activity_is_a_true_catch_all_not_a_verb_whitelist(load_fixture, fixture_name) -> None:
+    """Regression test for a real gap: compute.disks.resize and
+    compute.instances.setMachineType (a VM disk/RAM change) matched neither
+    "insert/create" nor "delete" nor any word in the old hand-picked verb
+    whitelist (update/patch/remove/enable/...) -- so a real VM modification
+    never alerted at all. The log sink only ever forwards Admin Activity
+    logs, which Google guarantees are mutating-only, so this rule no longer
+    tries to re-derive "is this mutating" from the method name -- it just
+    excludes what's covered elsewhere.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture(fixture_name))
+    findings = engine.evaluate_rules(event)
+    assert "unclassified_admin_activity" in {f.rule_id for f in findings}
+
+
+def test_unclassified_admin_activity_does_not_duplicate_resource_created(load_fixture) -> None:
+    """Now that the verb whitelist is gone, a create/insert call must still
+    be excluded here -- otherwise every resource_created event would ALSO
+    fire this rule, sending two emails (one HIGH, one LOW) for the same
+    event.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("resource_created.json"))
+    findings = engine.evaluate_rules(event)
+    matched = {f.rule_id for f in findings}
+    assert "resource_created" in matched
+    assert "unclassified_admin_activity" not in matched
+
+
+def test_unclassified_admin_activity_does_not_duplicate_resource_deleted(load_fixture) -> None:
+    event = EnrichedEvent.from_log_entry(load_fixture("resource_deleted.json"))
+    findings = engine.evaluate_rules(event)
+    matched = {f.rule_id for f in findings}
+    assert "resource_deleted" in matched
+    assert "unclassified_admin_activity" not in matched
+
+
 def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
     covered = {
         "iam_policy_change",

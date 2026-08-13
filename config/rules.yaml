@@ -362,22 +362,36 @@ rules:
   - id: unclassified_admin_activity
     title: "Unclassified admin activity"
     description: >
-      A mutating call (update/patch/remove/enable/disable/revoke/grant/
-      add/attach/detach/rotate/undelete/restore/move/import/export) was
-      made against a resource and didn't fall under SetIamPolicy or an
-      OrgPolicy method -- i.e. it isn't specifically covered by any other
-      rule in this file. Create/insert and delete calls are excluded here
-      -- see rules 11 and 12, which cover those at HIGH severity instead.
-      Exists so nothing mutating is ever silently unalerted.
+      A genuine catch-all: this sink only ever forwards Admin Activity
+      audit logs (see terraform/modules/logging's filter), and Google
+      never writes a read-only Get/List/Watch call to that log category --
+      so every event reaching this pipeline is ALREADY a mutating call,
+      guaranteed by the log category itself, not by anything this rule
+      re-derives from the method name. This rule fires on every one of
+      those that isn't specifically covered by another rule (SetIamPolicy,
+      an OrgPolicy method, or create/delete -- rules 11/12 cover those at
+      HIGH severity instead). Previously this matched only a hand-picked
+      whitelist of verbs (update/patch/remove/enable/...), which silently
+      missed real modifications using any other verb -- e.g.
+      compute.instances.setMachineType (VM resize) and
+      compute.disks.resize matched neither "insert/create" nor "delete"
+      nor any word in that whitelist, so a VM resize never alerted at all.
+      Exists so nothing mutating is ever silently unalerted -- now actually
+      true.
     severity: LOW
     ai_analysis: false
     console_url_template: >-
       https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
     match:
       all_of:
-        - field: method_name
-          op: regex
-          value: '(?i)(update|patch|remove|enable|disable|revoke|grant|add|attach|detach|rotate|undelete|restore|move|import|export)'
+        - not:
+            field: method_name
+            op: regex
+            value: "(?i)(insert|create)"
+        - not:
+            field: method_name
+            op: regex
+            value: "(?i)delete"
         - not:
             field: method_name
             op: contains
