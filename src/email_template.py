@@ -150,10 +150,10 @@ def _render_nested_value(value: Any, depth: int = 0) -> str:
             return '<span style="color:#6b7280;">(empty)</span>'
         rows = "".join(
             "<tr>"
-            '<td style="padding:2px 8px 2px 0;font-family:Arial,sans-serif;font-size:12px;'
+            '<td style="padding:2px 8px 2px 0;font-family:Arial,sans-serif;font-size:13px;'
             'font-weight:bold;color:#374151;vertical-align:top;white-space:nowrap;">'
             f"{html.escape(_prettify_key(str(k)))}</td>"
-            '<td style="padding:2px 0;font-family:Arial,sans-serif;font-size:12px;'
+            '<td style="padding:2px 0;font-family:Arial,sans-serif;font-size:13px;'
             f'color:#111827;vertical-align:top;">{_render_nested_value(v, depth + 1)}</td>'
             "</tr>"
             for k, v in value.items()
@@ -207,11 +207,11 @@ def _render_field_rows(fields: list[tuple[str, Any]], row_bg: str) -> str:
         rows.append(
             "<tr>"
             f'<td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;'
-            f'background-color:{row_bg};font-family:Arial,sans-serif;font-size:13px;'
+            f'background-color:{row_bg};font-family:Arial,sans-serif;font-size:14px;'
             'font-weight:bold;color:#111827;vertical-align:top;width:35%;">'
             f"{html.escape(str(key))}</td>"
             '<td style="padding:6px 12px;border-bottom:1px solid #e5e7eb;'
-            'font-family:Arial,sans-serif;font-size:13px;color:#111827;'
+            'font-family:Arial,sans-serif;font-size:14px;color:#111827;'
             f'vertical-align:top;">{value_html}</td>'
             "</tr>"
         )
@@ -275,7 +275,7 @@ def _render_info_card(title: str, rows: list[tuple[str, Any]], *, accent: str | 
     border_left = f"border-left:3px solid {accent};" if accent else "border-left:1px solid #e2e8f0;"
     title_html = (
         '<tr><td colspan="2" style="padding:8px 12px 2px 12px;font-family:Arial,sans-serif;'
-        'font-size:10px;font-weight:bold;letter-spacing:0.08em;color:#94a3b8;'
+        'font-size:11px;font-weight:bold;letter-spacing:0.08em;color:#94a3b8;'
         f'text-transform:uppercase;">{html.escape(title)}</td></tr>'
         if title
         else ""
@@ -293,7 +293,7 @@ def _render_severity_badge(severity: str, accent: str) -> str:
     return (
         f'<span style="display:inline-block;padding:3px 10px;border-radius:10px;'
         f'background-color:{accent};color:#ffffff;font-family:Arial,sans-serif;'
-        'font-size:11px;font-weight:bold;letter-spacing:0.5px;">'
+        'font-size:12px;font-weight:bold;letter-spacing:0.5px;">'
         f"{html.escape(str(severity))}</span>"
     )
 
@@ -311,7 +311,7 @@ def _render_cta_row(buttons: list[tuple[str, str | None, str, str, str]]) -> str
             '<td style="padding:0 8px 0 0;">'
             f'<a href="{url_escaped}" style="display:inline-block;padding:10px 18px;'
             f'background-color:{bg_color};color:{text_color};font-family:Arial,sans-serif;'
-            f'font-size:12px;font-weight:bold;text-decoration:none;border-radius:4px;'
+            f'font-size:13px;font-weight:bold;text-decoration:none;border-radius:4px;'
             f'border:1px solid {border_color};">{html.escape(label)}</a></td>'
         )
     if not cells:
@@ -572,9 +572,9 @@ def _sa_key_risk_notes(fields: list[tuple[str, Any]]) -> list[str]:
 def _render_code_block(label: str, command: str) -> str:
     return (
         '<tr><td style="padding:4px 0;">'
-        f'<div style="font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;margin-bottom:3px;">'
+        f'<div style="font-family:Arial,sans-serif;font-size:12px;color:#94a3b8;margin-bottom:3px;">'
         f"{html.escape(label)}</div>"
-        '<div style="font-family:monospace;font-size:13px;color:#93c5fd;background-color:#0f172a;'
+        '<div style="font-family:monospace;font-size:14px;color:#93c5fd;background-color:#0f172a;'
         f'padding:8px 12px;border-radius:5px;overflow-wrap:break-word;">{html.escape(command)}</div>'
         "</td></tr>"
     )
@@ -638,6 +638,39 @@ def _subject_identifier(fields: list[tuple[str, Any]]) -> str | None:
     return project if isinstance(project, str) and project else None
 
 
+def _wrap_html_document(*, subject: str, severity: str, title: str, body_html: str) -> str:
+    """Wrap a template's inner <table> markup in a full HTML document --
+    <!doctype>/<html>/<head> with charset + viewport meta tags, plus a
+    hidden preheader (the inbox-list preview snippet most clients show
+    next to the subject, read before any visible body content). Meta tags
+    aren't a <style> block, so this stays within CLAUDE.md's "inline CSS
+    and <table> layout only" constraint -- no CSS rule lives outside an
+    inline `style=` attribute anywhere in this module.
+
+    subject/severity/title are already attacker-influenced (from the
+    finding) by the time they reach here -- html.escape()'d same as every
+    other interpolated value in this module.
+    """
+    preheader = html.escape(_strip_header_injection(f"{severity}: {title}")[:150])
+    return (
+        "<!doctype html>"
+        '<html lang="en">'
+        "<head>"
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+        f"<title>{html.escape(subject)}</title>"
+        "</head>"
+        '<body style="margin:0;padding:0;background-color:#f3f4f6;">'
+        '<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;'
+        'opacity:0;overflow:hidden;mso-hide:all;">'
+        f"{preheader}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;"
+        "</div>"
+        f"{body_html}"
+        "</body>"
+        "</html>"
+    )
+
+
 def render_alert(
     *,
     rule_id: str,
@@ -692,6 +725,7 @@ def render_alert(
         generated_at=generated_at,
         alert_id=alert_id,
     )
+    html_body = _wrap_html_document(subject=subject, severity=severity, title=title, body_html=html_body)
     text_body = _render_text(
         severity=severity,
         title=title,
@@ -736,19 +770,19 @@ def _render_template_a(
     kpi_row = (
         "<tr>"
         '<td width="34%" style="padding:12px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">'
-        '<div style="font-family:Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;">'
+        '<div style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase;">'
         "Severity</div>"
         f'<div style="font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:{accent};">'
         f"{html.escape(str(severity))}</div></td>"
         '<td width="33%" style="padding:12px;border-bottom:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">'
-        '<div style="font-family:Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;">'
+        '<div style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase;">'
         "Method</div>"
-        '<div style="font-family:Arial,sans-serif;font-size:13px;font-weight:bold;color:#0f172a;">'
+        '<div style="font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:#0f172a;">'
         f"{html.escape(str(method))}</div></td>"
         '<td width="33%" style="padding:12px;border-bottom:1px solid #e2e8f0;">'
-        '<div style="font-family:Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;">'
+        '<div style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;text-transform:uppercase;">'
         "Caller IP</div>"
-        '<div style="font-family:Arial,sans-serif;font-size:13px;font-weight:bold;color:#0f172a;">'
+        '<div style="font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:#0f172a;">'
         f"{html.escape(str(caller_ip))}</div></td>"
         "</tr>"
     )
@@ -765,7 +799,7 @@ def _render_template_a(
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #fed7aa;border-radius:6px;background-color:#fff7ed;">'
             '<tr><td colspan="2" style="padding:10px 12px 2px 12px;font-family:Arial,sans-serif;'
-            "font-size:10px;font-weight:bold;letter-spacing:0.08em;color:#c2410c;"
+            "font-size:11px;font-weight:bold;letter-spacing:0.08em;color:#c2410c;"
             'text-transform:uppercase;">Change Detail</td></tr>'
             f'{_render_field_rows(change_rows, "#ffedd5")}</table></td></tr>'
         )
@@ -776,7 +810,7 @@ def _render_template_a(
             '<tr><td style="padding:0 20px 16px 20px;">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #bfdbfe;border-radius:6px;background-color:#eff6ff;">'
-            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
+            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:14px;'
             'color:#0f172a;line-height:1.6;">'
             '<strong style="display:block;margin-bottom:6px;color:#1e40af;">&#10022; Gemini AI Analysis</strong>'
             f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
@@ -796,16 +830,16 @@ def _render_template_a(
         f'<tr><td style="background-color:{accent};height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>'
         '<tr><td style="background-color:#0f172a;padding:20px 20px 16px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;letter-spacing:1px;'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;letter-spacing:1px;'
         'color:#e2e8f0;">GCP AUDIT PLATFORM</td>'
-        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;">'
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:12px;color:#94a3b8;">'
         f"{project_e}</td></tr></table>"
-        f'<div style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;margin-top:2px;">'
+        f'<div style="font-family:Arial,sans-serif;font-size:12px;color:#64748b;margin-top:2px;">'
         f"{html.escape(generated_at)}</div>"
         f'<div style="margin-top:12px;">{_render_severity_badge(severity, accent)}</div>'
         f'<div style="color:#ffffff;font-family:Arial,sans-serif;font-size:24px;font-weight:bold;'
         f'margin-top:8px;">{title_e}</div>'
-        f'<div style="color:#94a3b8;font-family:Arial,sans-serif;font-size:12px;margin-top:4px;">'
+        f'<div style="color:#94a3b8;font-family:Arial,sans-serif;font-size:13px;margin-top:4px;">'
         f"Rule: {rule_id_e} &middot; Alert: {html.escape(alert_id)}</div>"
         "</td></tr>"
         f'<tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">{kpi_row}'
@@ -813,11 +847,11 @@ def _render_template_a(
         f"{cards_html}{change_html}{ai_html}{buttons_html}"
         '<tr><td style="padding:14px 20px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;color:#64748b;">'
         "GCP Audit Platform &middot; Automated &middot; Do not reply</td>"
         '<td style="text-align:right;"><span style="display:inline-block;padding:2px 8px;'
         'border-radius:8px;background-color:#eff6ff;color:#3b82f6;font-family:Arial,sans-serif;'
-        f'font-size:10px;font-weight:bold;">{rule_id_e}</span></td>'
+        f'font-size:11px;font-weight:bold;">{rule_id_e}</span></td>'
         "</tr></table></td></tr>"
         "</table>"
     )
@@ -874,7 +908,7 @@ def _render_template_b(
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #fed7aa;border-radius:6px;background-color:#fff7ed;">'
             '<tr><td colspan="2" style="padding:10px 12px 2px 12px;font-family:Arial,sans-serif;'
-            "font-size:10px;font-weight:bold;letter-spacing:0.08em;color:#c2410c;"
+            "font-size:11px;font-weight:bold;letter-spacing:0.08em;color:#c2410c;"
             'text-transform:uppercase;">Change Detail</td></tr>'
             f'{_render_field_rows(change_rows, "#ffedd5")}</table></td></tr>'
         )
@@ -891,9 +925,9 @@ def _render_template_b(
             '<tr><td style="padding:6px 0;border-bottom:1px dashed #fde68a;">'
             f'<span style="display:inline-block;padding:2px 8px;border-radius:8px;'
             f'background-color:{tag_colors.get(tag, "#64748b")};color:#ffffff;'
-            f'font-family:Arial,sans-serif;font-size:10px;font-weight:bold;margin-right:8px;">'
+            f'font-family:Arial,sans-serif;font-size:11px;font-weight:bold;margin-right:8px;">'
             f"{html.escape(tag)}</span>"
-            f'<span style="font-family:Arial,sans-serif;font-size:12px;color:#78350f;">'
+            f'<span style="font-family:Arial,sans-serif;font-size:13px;color:#78350f;">'
             f"{html.escape(desc)}</span></td></tr>"
             for tag, desc in indicators
         )
@@ -901,7 +935,7 @@ def _render_template_b(
             '<tr><td style="padding:16px 20px 0 20px;">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #fde68a;border-radius:6px;background-color:#fffbeb;">'
-            '<tr><td style="padding:10px 14px 4px 14px;font-family:Arial,sans-serif;font-size:11px;'
+            '<tr><td style="padding:10px 14px 4px 14px;font-family:Arial,sans-serif;font-size:12px;'
             'font-weight:bold;letter-spacing:0.06em;color:#92400e;text-transform:uppercase;">'
             "Indicators of Concern</td></tr>"
             '<tr><td style="padding:0 14px 8px 14px;"><table role="presentation" width="100%" '
@@ -915,7 +949,7 @@ def _render_template_b(
             '<tr><td style="padding:16px 20px 0 20px;">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #bbf7d0;border-radius:6px;background-color:#f0fdf4;">'
-            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
+            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:14px;'
             'color:#14532d;line-height:1.6;">'
             '<strong style="display:block;margin-bottom:6px;">&#10022; Gemini AI Analysis</strong>'
             f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
@@ -934,9 +968,9 @@ def _render_template_b(
         'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e5e7eb;">'
         '<tr><td style="background-color:#1e293b;padding:10px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;">'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#ffffff;">'
         "&#128274; GCP AUDIT PLATFORM</td>"
-        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;">'
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:12px;color:#94a3b8;">'
         f"{html.escape(alert_id)}</td></tr></table></td></tr>"
         '<tr><td style="padding:16px 20px 0 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
@@ -945,16 +979,16 @@ def _render_template_b(
         f"{_render_severity_badge(severity, accent)}"
         f'<div style="font-family:Arial,sans-serif;font-size:18px;font-weight:bold;color:#7f1d1d;'
         f'margin-top:8px;">{title_e}</div>'
-        f'<div style="font-family:Arial,sans-serif;font-size:12px;color:#991b1b;margin-top:2px;">'
+        f'<div style="font-family:Arial,sans-serif;font-size:13px;color:#991b1b;margin-top:2px;">'
         f"Rule: {rule_id_e} &middot; {html.escape(generated_at)}</div>"
         "</td></tr></table></td></tr>"
         f"{two_col}{change_html}{leftover_html}{ioc_html}{ai_html}{buttons_html}"
         '<tr><td style="padding:14px 20px;border-top:1px solid #e5e7eb;background-color:#f8fafc;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;color:#6b7280;">'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;color:#6b7280;">'
         f"GCP Audit Platform &middot; Alert #{html.escape(alert_id)} &middot; Automated &middot; "
         "Do not reply</td>"
-        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;font-weight:bold;'
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:12px;font-weight:bold;'
         f'color:{accent};">{html.escape(str(severity))}</td>'
         "</tr></table></td></tr>"
         "</table>"
@@ -990,7 +1024,7 @@ def _render_template_c(
         tags.append("AI-analysed")
     tags_html = "".join(
         '<span style="display:inline-block;padding:2px 8px;border-radius:8px;'
-        f"background-color:{tint};color:{accent};font-family:Arial,sans-serif;font-size:10px;"
+        f"background-color:{tint};color:{accent};font-family:Arial,sans-serif;font-size:11px;"
         f'font-weight:bold;margin-right:6px;">{html.escape(tag)}</span>'
         for tag in tags
     )
@@ -1006,10 +1040,10 @@ def _render_template_c(
         zebra_rows.append(
             "<tr>"
             f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
-            'font-family:Arial,sans-serif;font-size:13px;font-weight:bold;color:#0f172a;width:35%;">'
+            'font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:#0f172a;width:35%;">'
             f"{html.escape(str(key))}</td>"
             f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
-            f'font-family:Arial,sans-serif;font-size:13px;color:#0f172a;">{value_html}</td>'
+            f'font-family:Arial,sans-serif;font-size:14px;color:#0f172a;">{value_html}</td>'
             "</tr>"
         )
     zebra_html = ""
@@ -1030,7 +1064,7 @@ def _render_template_c(
                 badge = (
                     '<span style="display:inline-block;margin-left:6px;padding:1px 6px;'
                     'border-radius:6px;background-color:#ef4444;color:#ffffff;'
-                    'font-family:Arial,sans-serif;font-size:9px;font-weight:bold;">PUBLIC</span>'
+                    'font-family:Arial,sans-serif;font-size:10px;font-weight:bold;">PUBLIC</span>'
                 )
             value_html = (
                 _render_nested_value(value) if isinstance(value, Mapping | list | tuple) else html.escape(str(value))
@@ -1038,10 +1072,10 @@ def _render_template_c(
             rows_html.append(
                 "<tr>"
                 '<td style="padding:8px 12px;border-bottom:1px solid #fed7aa;font-family:Arial,sans-serif;'
-                'font-size:13px;font-weight:bold;color:#7c2d12;width:35%;">'
+                'font-size:14px;font-weight:bold;color:#7c2d12;width:35%;">'
                 f"{html.escape(str(key))}{badge}</td>"
                 '<td style="padding:8px 12px;border-bottom:1px solid #fed7aa;font-family:Arial,sans-serif;'
-                f'font-size:13px;color:#0f172a;">{value_html}</td>'
+                f'font-size:14px;color:#0f172a;">{value_html}</td>'
                 "</tr>"
             )
         change_html = (
@@ -1049,7 +1083,7 @@ def _render_template_c(
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #fed7aa;">'
             '<tr><td colspan="2" style="padding:8px 12px;background-color:#fff7ed;'
-            'font-family:Arial,sans-serif;font-size:11px;font-weight:bold;letter-spacing:0.06em;'
+            'font-family:Arial,sans-serif;font-size:12px;font-weight:bold;letter-spacing:0.06em;'
             'color:#9a3412;text-transform:uppercase;">Change Detail</td></tr>'
             f'{"".join(rows_html)}</table></td></tr>'
         )
@@ -1061,9 +1095,9 @@ def _render_template_c(
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #c7d2fe;">'
             '<tr><td style="padding:8px 12px;background-color:#eef2ff;font-family:Arial,sans-serif;'
-            'font-size:12px;font-weight:bold;color:#3730a3;">&#10022; Gemini AI Analysis</td></tr>'
+            'font-size:13px;font-weight:bold;color:#3730a3;">&#10022; Gemini AI Analysis</td></tr>'
             '<tr><td style="padding:12px 16px;background-color:#e0e7ff;font-family:Arial,sans-serif;'
-            f'font-size:13px;color:#1e1b4b;line-height:1.6;">{_render_ai_text(ai_analysis)}</td></tr>'
+            f'font-size:14px;color:#1e1b4b;line-height:1.6;">{_render_ai_text(ai_analysis)}</td></tr>'
             "</table></td></tr>"
         )
 
@@ -1082,22 +1116,22 @@ def _render_template_c(
         'style="max-width:620px;font-family:Arial,sans-serif;border:1px solid #e2e8f0;">'
         '<tr><td style="background-color:#1e293b;padding:8px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;">'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#ffffff;">'
         "&#9679; GCP Audit Platform</td>"
-        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;">'
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:12px;color:#94a3b8;">'
         f"{html.escape(alert_id)}</td></tr></table></td></tr>"
         f'<tr><td style="padding:18px 20px 12px 20px;border-bottom:3px solid {accent};">'
         f"<div>{tags_html}</div>"
         f'<div style="font-family:Arial,sans-serif;font-size:22px;font-weight:bold;color:#0f172a;'
         f'margin-top:8px;">{title_e}</div>'
-        f'<div style="font-family:Arial,sans-serif;font-size:12px;color:#64748b;margin-top:4px;">'
+        f'<div style="font-family:Arial,sans-serif;font-size:13px;color:#64748b;margin-top:4px;">'
         f"{subtitle}</div></td></tr>"
         f"{zebra_html}{change_html}{ai_html}{buttons_html}"
         '<tr><td style="padding:14px 20px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;color:#64748b;">'
         "GCP Audit Platform &middot; Automated security alert<br>Do not reply</td>"
-        '<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        '<td style="text-align:right;font-family:Arial,sans-serif;font-size:12px;color:#64748b;">'
         f"Alert: {html.escape(alert_id)}<br>Rule: {rule_id_e}</td>"
         "</tr></table></td></tr>"
         "</table>"
@@ -1150,7 +1184,7 @@ def _render_template_d(
     impact_html = "".join(
         '<td width="33%" style="padding:12px;vertical-align:top;">'
         f'<div style="width:8px;height:8px;border-radius:50%;background-color:{accent};margin-bottom:6px;"></div>'
-        '<div style="font-family:Arial,sans-serif;font-size:12px;color:#334155;line-height:1.4;">'
+        '<div style="font-family:Arial,sans-serif;font-size:13px;color:#334155;line-height:1.4;">'
         f"{html.escape(item)}</div>"
         "</td>"
         for item in _business_impact(rule_id)
@@ -1168,7 +1202,7 @@ def _render_template_d(
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #fed7aa;border-radius:6px;background-color:#fff7ed;">'
             '<tr><td colspan="2" style="padding:10px 12px 2px 12px;font-family:Arial,sans-serif;'
-            "font-size:10px;font-weight:bold;letter-spacing:0.08em;color:#c2410c;"
+            "font-size:11px;font-weight:bold;letter-spacing:0.08em;color:#c2410c;"
             'text-transform:uppercase;">Change Detail</td></tr>'
             f'{_render_field_rows(change_rows, "#ffedd5")}</table></td></tr>'
         )
@@ -1179,7 +1213,7 @@ def _render_template_d(
             '<tr><td style="padding:0 20px 16px 20px;">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #bfdbfe;border-radius:6px;background-color:#eff6ff;">'
-            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
+            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:14px;'
             'color:#0f172a;line-height:1.75;">'
             '<strong style="display:block;margin-bottom:6px;color:#1e40af;">&#10022; Gemini AI Analysis</strong>'
             f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
@@ -1200,32 +1234,32 @@ def _render_template_d(
         f'<tr><td style="background-color:{accent};height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>'
         '<tr><td style="background-color:#0f172a;padding:16px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;letter-spacing:1px;'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;letter-spacing:1px;'
         'color:#e2e8f0;">GCP AUDIT PLATFORM</td>'
-        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:12px;color:#64748b;">'
         f"Alert: {html.escape(alert_id)} &middot; {html.escape(generated_at)}</td></tr></table></td></tr>"
         '<tr><td style="padding:24px 20px 20px 20px;">'
         f"{_render_severity_badge(severity, accent)}"
         f'<div style="font-family:Arial,sans-serif;font-size:22px;font-weight:bold;color:#0f172a;'
         f'margin-top:10px;">{plain_title}</div>'
-        '<div style="font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;margin-top:4px;">'
+        '<div style="font-family:Arial,sans-serif;font-size:12px;color:#94a3b8;margin-top:4px;">'
         f"Rule: {rule_id_e}</div>"
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;'
         f'border-left:3px solid {accent};background-color:#f8fafc;">'
-        '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;color:#334155;'
+        '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:14px;color:#334155;'
         f'line-height:1.6;">{summary_e}</td></tr></table>'
         "</td></tr>"
         '<tr><td style="padding:0 20px 16px 20px;">'
-        '<div style="font-family:Arial,sans-serif;font-size:10px;font-weight:bold;letter-spacing:0.08em;'
+        '<div style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;letter-spacing:0.08em;'
         'color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">Business Impact</div>'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>{impact_html}'
         "</tr></table></td></tr>"
         f"{cards_html}{change_html}{ai_html}{buttons_html}"
         '<tr><td style="padding:14px 20px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;color:#64748b;">'
         "GCP Audit Platform &middot; Automated &middot; Do not reply</td>"
-        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:{accent};'
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:12px;color:{accent};'
         f'font-weight:bold;">{html.escape(str(severity))}</td>'
         "</tr></table></td></tr>"
         "</table>"
@@ -1267,10 +1301,10 @@ def _render_template_e(
         zebra_rows.append(
             "<tr>"
             f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
-            'font-family:Arial,sans-serif;font-size:13px;font-weight:bold;color:#0f172a;width:35%;">'
+            'font-family:Arial,sans-serif;font-size:14px;font-weight:bold;color:#0f172a;width:35%;">'
             f"{html.escape(str(key))}</td>"
             f'<td style="padding:8px 12px;background-color:{bg};border-bottom:1px solid #e2e8f0;'
-            f'font-family:monospace;font-size:12px;color:#0f172a;">{value_html}</td>'
+            f'font-family:monospace;font-size:13px;color:#0f172a;">{value_html}</td>'
             "</tr>"
         )
     zebra_html = ""
@@ -1295,7 +1329,7 @@ def _render_template_e(
             if firewall_rows:
                 firewall_html = (
                     '<tr><td style="padding:16px 20px 0 20px;">'
-                    '<div style="font-family:Arial,sans-serif;font-size:10px;font-weight:bold;'
+                    '<div style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;'
                     'letter-spacing:0.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">'
                     "Firewall Configuration</div>"
                     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
@@ -1308,13 +1342,13 @@ def _render_template_e(
         notes = _sa_key_risk_notes(fields)
         if notes:
             notes_rows = "".join(
-                f'<div style="padding:4px 0;font-family:Arial,sans-serif;font-size:12px;color:#334155;'
+                f'<div style="padding:4px 0;font-family:Arial,sans-serif;font-size:13px;color:#334155;'
                 f'line-height:1.5;">&bull; {html.escape(n)}</div>'
                 for n in notes
             )
             sa_key_html = (
                 '<tr><td style="padding:16px 20px 0 20px;">'
-                '<div style="font-family:Arial,sans-serif;font-size:10px;font-weight:bold;'
+                '<div style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;'
                 'letter-spacing:0.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">'
                 "Key Risk Notes</div>"
                 f"{notes_rows}</td></tr>"
@@ -1328,9 +1362,9 @@ def _render_template_e(
             '<tr><td style="padding:6px 0;border-bottom:1px dashed #fde68a;">'
             f'<span style="display:inline-block;padding:2px 8px;border-radius:8px;'
             f'background-color:{tag_colors.get(tag, "#64748b")};color:#ffffff;'
-            f'font-family:Arial,sans-serif;font-size:10px;font-weight:bold;margin-right:8px;">'
+            f'font-family:Arial,sans-serif;font-size:11px;font-weight:bold;margin-right:8px;">'
             f"{html.escape(tag)}</span>"
-            f'<span style="font-family:Arial,sans-serif;font-size:12px;color:#78350f;">'
+            f'<span style="font-family:Arial,sans-serif;font-size:13px;color:#78350f;">'
             f"{html.escape(desc)}</span></td></tr>"
             for tag, desc in indicators
         )
@@ -1338,7 +1372,7 @@ def _render_template_e(
             '<tr><td style="padding:16px 20px 0 20px;">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #fde68a;border-radius:6px;background-color:#fffbeb;">'
-            '<tr><td style="padding:10px 14px 4px 14px;font-family:Arial,sans-serif;font-size:11px;'
+            '<tr><td style="padding:10px 14px 4px 14px;font-family:Arial,sans-serif;font-size:12px;'
             'font-weight:bold;letter-spacing:0.06em;color:#92400e;text-transform:uppercase;">'
             "Risk Indicators</td></tr>"
             '<tr><td style="padding:0 14px 8px 14px;"><table role="presentation" width="100%" '
@@ -1352,7 +1386,7 @@ def _render_template_e(
             '<tr><td style="padding:16px 20px 0 20px;">'
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
             'style="border:1px solid #bbf7d0;border-radius:6px;background-color:#f0fdf4;">'
-            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;'
+            '<tr><td style="padding:12px 16px;font-family:Arial,sans-serif;font-size:14px;'
             'color:#14532d;line-height:1.75;">'
             '<strong style="display:block;margin-bottom:6px;">&#10022; Gemini AI Analysis</strong>'
             f"{_render_ai_text(ai_analysis)}</td></tr></table></td></tr>"
@@ -1370,7 +1404,7 @@ def _render_template_e(
         command_rows = "".join(_render_code_block(label, cmd) for label, cmd in commands)
         remediation_html = (
             '<tr><td style="padding:16px 20px 0 20px;">'
-            '<div style="font-family:Arial,sans-serif;font-size:10px;font-weight:bold;'
+            '<div style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;'
             'letter-spacing:0.08em;color:#94a3b8;text-transform:uppercase;margin-bottom:8px;">'
             "Remediation Commands</div>"
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{command_rows}</table>'
@@ -1391,25 +1425,25 @@ def _render_template_e(
         'overflow:hidden;">'
         '<tr><td style="background-color:#0f172a;padding:10px 20px;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;font-weight:bold;color:#ffffff;">'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#ffffff;">'
         "GCP AUDIT PLATFORM</td>"
-        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:11px;color:#94a3b8;">'
+        f'<td style="text-align:right;font-family:Arial,sans-serif;font-size:12px;color:#94a3b8;">'
         f"{html.escape(alert_id)}</td></tr></table></td></tr>"
         f'<tr><td style="padding:16px 20px;background-color:{tint};border-bottom:3px solid {accent};">'
         f"{_render_severity_badge(severity, accent)}"
         f'<div style="font-family:Arial,sans-serif;font-size:18px;font-weight:bold;color:#0f172a;'
         f'margin-top:8px;">{title_e}</div>'
-        '<div style="font-family:Arial,sans-serif;font-size:12px;color:#475569;margin-top:2px;">'
+        '<div style="font-family:Arial,sans-serif;font-size:13px;color:#475569;margin-top:2px;">'
         f"Rule: {rule_id_e} &middot; {html.escape(generated_at)}</div>"
         "</td></tr>"
         f"{zebra_html}{firewall_html}{sa_key_html}{ioc_html}{ai_html}{remediation_html}{buttons_html}"
         '<tr><td style="padding:14px 20px;border-top:1px solid #e2e8f0;background-color:#f8fafc;">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>'
-        '<td style="font-family:Arial,sans-serif;font-size:11px;color:#64748b;">'
+        '<td style="font-family:Arial,sans-serif;font-size:12px;color:#64748b;">'
         "GCP Audit Platform &middot; Automated &middot; Do not reply</td>"
         '<td style="text-align:right;"><span style="display:inline-block;padding:2px 8px;'
         'border-radius:8px;background-color:#eff6ff;color:#3b82f6;font-family:Arial,sans-serif;'
-        f'font-size:10px;font-weight:bold;">{rule_id_e}</span></td>'
+        f'font-size:11px;font-weight:bold;">{rule_id_e}</span></td>'
         "</tr></table></td></tr>"
         "</table>"
     )
