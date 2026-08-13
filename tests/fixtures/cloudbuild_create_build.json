@@ -1,0 +1,37 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudbuild.googleapis.com",
+    "methodName": "google.devtools.cloudbuild.v1.CloudBuild.CreateBuild",
+    "resourceName": "projects/prj-dg-devops-test/builds",
+    "authenticationInfo": {
+      "principalEmail": "service-88240501906@gcf-admin-robot.iam.gserviceaccount.com"
+    },
+    "requestMetadata": {
+      "callerIp": "private",
+      "callerSuppliedUserAgent": "stubby_client"
+    },
+    "request": {
+      "@type": "type.googleapis.com/google.devtools.cloudbuild.v1.CreateBuildRequest",
+      "build": {
+        "substitutions": {
+          "GOOGLE_BUILD_ENV": "prod",
+          "GOOGLE_FUNCTION_TARGET": "process_audit_log",
+          "GOOGLE_RUNTIME": "python312"
+        },
+        "tags": ["p-gcf", "r-python312", "t-function"],
+        "timeout": "1800s"
+      }
+    }
+  },
+  "resource": {
+    "type": "build",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-13T03:22:19Z",
+  "insertId": "fixture-cloudbuild-create-build-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

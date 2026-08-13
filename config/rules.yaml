@@ -533,6 +533,16 @@ rules:
             field: method_name
             op: contains
             value: "CreateProject"
+        - not:
+            field: method_name
+            op: contains
+            # Cloud Build kicks one of these off for every deploy this repo's
+            # own scripts/CI trigger (gcloud builds submit, Cloud Functions
+            # v2's own build-on-deploy) -- routine CI/CD activity, not a
+            # security-relevant resource creation, and "Requested Change"
+            # below would otherwise dump the entire Build object (every
+            # GOOGLE_* substitution var, image labels, tags) as noise.
+            value: "CloudBuild.CreateBuild"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject

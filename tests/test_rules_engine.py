@@ -315,6 +315,17 @@ def test_shipped_rule_matches_its_fixture(load_fixture, fixture_name, expected_r
     assert expected_rule_id in matched_ids
 
 
+def test_resource_created_excludes_cloud_build_create_build(load_fixture) -> None:
+    """Cloud Build kicks off a CreateBuild for every deploy this repo's own
+    scripts/CI trigger -- routine CI/CD noise, not a security-relevant
+    resource creation, and its Build.substitutions map would otherwise dump
+    dozens of GOOGLE_* build env vars into the alert email as noise.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("cloudbuild_create_build.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
+
+
 def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
     covered = {
         "iam_policy_change",
