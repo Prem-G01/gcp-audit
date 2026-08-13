@@ -34,10 +34,12 @@ severity_styles:
   #   tint: "#ede9fe"
 
 recipients:
-  # NOTE: routed to a single real mailbox for now (the same one proven
-  # working by scripts/probe_dwd.py) so the pipeline is genuinely
-  # end-to-end testable. Replace with real distribution lists before
-  # relying on this for actual production alerting.
+  # Tiered by severity so a LOW/INFO flood (routine VM/config changes,
+  # now caught in full since unclassified_admin_activity became a true
+  # catch-all -- see config/rules.yaml) doesn't bury the whole team in
+  # noise. CRITICAL/HIGH keep full visibility for everyone; MEDIUM and
+  # below narrow to the platform owner's two identities only. Adjust
+  # freely -- this is a first cut, not a fixed policy.
   CRITICAL:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
@@ -51,22 +53,14 @@ recipients:
   MEDIUM:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
-    - udayakrishna.duraisamy@securekloud.com
-    - kalpana.babu@securekloud.com
   LOW:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
-    - udayakrishna.duraisamy@securekloud.com
-    - kalpana.babu@securekloud.com
   INFO:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
-    - udayakrishna.duraisamy@securekloud.com
-    - kalpana.babu@securekloud.com
 
   # Used when a finding's severity has no explicit entry above.
   default:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
-    - udayakrishna.duraisamy@securekloud.com
-    - kalpana.babu@securekloud.com
