@@ -386,6 +386,22 @@ rules:
             field: method_name
             op: contains
             value: "OrgPolicy"
+        - not:
+            all_of:
+              # This platform's own Terraform-driven deploys call
+              # FunctionService.UpdateFunction on this very function every
+              # apply -- routine, expected, and otherwise fires this rule
+              # on itself constantly. Scoped to the known deploy SA only,
+              # NOT to the method name alone -- an UpdateFunction from any
+              # OTHER principal is exactly the case this rule exists to
+              # catch (e.g. a compromised credential modifying the
+              # function's code), so that stays fully alertable.
+              - field: method_name
+                op: contains
+                value: "FunctionService.UpdateFunction"
+              - field: principal_email
+                op: equals
+                value: "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject

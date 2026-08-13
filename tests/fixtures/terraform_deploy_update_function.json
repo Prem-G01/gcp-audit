@@ -1,0 +1,25 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudfunctions.googleapis.com",
+    "methodName": "google.cloud.functions.v2.FunctionService.UpdateFunction",
+    "resourceName": "projects/prj-dg-devops-test/locations/asia-south1/functions/process-audit-log-gmail-alerts",
+    "authenticationInfo": {
+      "principalEmail": "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
+    },
+    "requestMetadata": {
+      "callerIp": "private",
+      "callerSuppliedUserAgent": "Terraform/1.9.0"
+    }
+  },
+  "resource": {
+    "type": "cloud_function",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-13T03:09:02Z",
+  "insertId": "fixture-terraform-update-function-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

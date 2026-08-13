@@ -326,6 +326,27 @@ def test_resource_created_excludes_cloud_build_create_build(load_fixture) -> Non
     assert findings == []
 
 
+def test_unclassified_admin_activity_excludes_own_terraform_deploy(load_fixture) -> None:
+    """This platform's own Terraform-driven deploys call UpdateFunction on
+    this very function every apply -- routine and expected from the known
+    deploy SA, so it shouldn't self-alert every time we ship a change.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("terraform_deploy_update_function.json"))
+    findings = engine.evaluate_rules(event)
+    assert "unclassified_admin_activity" not in {f.rule_id for f in findings}
+
+
+def test_unclassified_admin_activity_still_fires_for_update_function_from_other_principal(load_fixture) -> None:
+    """The deploy-SA exclusion above must be scoped to that SA specifically,
+    not to the UpdateFunction method name generally -- the same call from
+    any other principal (e.g. a compromised credential modifying this
+    function's code) is exactly the case this rule exists to catch.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("unexpected_update_function.json"))
+    findings = engine.evaluate_rules(event)
+    assert "unclassified_admin_activity" in {f.rule_id for f in findings}
+
+
 def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
     covered = {
         "iam_policy_change",

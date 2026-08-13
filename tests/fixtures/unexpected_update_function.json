@@ -1,0 +1,25 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudfunctions.googleapis.com",
+    "methodName": "google.cloud.functions.v2.FunctionService.UpdateFunction",
+    "resourceName": "projects/prj-dg-devops-test/locations/asia-south1/functions/process-audit-log-gmail-alerts",
+    "authenticationInfo": {
+      "principalEmail": "attacker@evil.example"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.99",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    }
+  },
+  "resource": {
+    "type": "cloud_function",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-13T03:09:02Z",
+  "insertId": "fixture-unexpected-update-function-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}
