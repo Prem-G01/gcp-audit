@@ -290,6 +290,40 @@ def test_html_document_declares_light_only_color_scheme() -> None:
     assert '<meta name="supported-color-schemes" content="light">' in html_body
 
 
+def test_dotted_annotation_key_renders_verbatim_not_mangled() -> None:
+    """Kubernetes-style annotation keys (which Cloud Run's request objects
+    carry, e.g. from an UpdateService call) aren't camelCase/snake_case --
+    running the word-splitting prettifier on them produced mangled output
+    ("Autoscaling.knative.dev/max Scale") that was less readable than the
+    original, not more. Must render verbatim instead.
+    """
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1",
+        severity="LOW",
+        title="Title",
+        fields={"Requested Change": {"autoscaling.knative.dev/maxScale": "2"}},
+    )
+    assert "autoscaling.knative.dev/maxScale" in html_body
+    assert "Autoscaling.knative.dev/max Scale" not in html_body
+
+
+def test_nested_object_indentation_increases_visibly_with_depth() -> None:
+    """The original 6px-per-level indent was imperceptible past 2 levels
+    deep -- real GCP request shapes (Spec > Template > Containers >
+    Resources) commonly nest 3-4 levels, which read as one flat wall of
+    key/value pairs rather than a traceable hierarchy. Confirm indentation
+    now visibly compounds per level.
+    """
+    _subject, html_body, _text_body = render_alert(
+        rule_id="R1",
+        severity="LOW",
+        title="Title",
+        fields={"Requested Change": {"a": {"b": {"c": "deep value"}}}},
+    )
+    assert "padding-left:14px" in html_body
+    assert "deep value" in html_body
+
+
 def test_prettify_key_camel_case() -> None:
     assert _prettify_key("principalSubject") == "Principal Subject"
     assert _prettify_key("sourceRanges") == "Source Ranges"
@@ -306,6 +340,10 @@ def test_prettify_key_preserves_acronym_casing() -> None:
 
 def test_prettify_key_empty_string_returns_unchanged() -> None:
     assert _prettify_key("") == ""
+
+
+def test_prettify_key_returns_dotted_slashed_key_verbatim() -> None:
+    assert _prettify_key("autoscaling.knative.dev/maxScale") == "autoscaling.knative.dev/maxScale"
 
 
 # --- template selection -------------------------------------------------

@@ -51,6 +51,11 @@ _FALLBACK_TINT = "#f3f4f6"
 _MAX_NESTED_RENDER_DEPTH = 6
 _MAX_SCALAR_LENGTH = 500
 _MAX_LIST_ITEMS = 20
+# Cycled by nesting depth in _render_nested_value so each level of a deeply
+# nested object is visually distinguishable from its parent, not just
+# indented by the same flat gray line at every depth. Darker -> lighter
+# reads as "more deeply nested" without needing a legend.
+_NESTING_BORDER_COLORS = ("#94a3b8", "#cbd5e1", "#e2e8f0")
 
 
 @lru_cache(maxsize=8)
@@ -125,13 +130,26 @@ def _field_value(fields: list[tuple[str, Any]], label: str) -> Any | None:
 _CAMEL_BOUNDARY_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
+_SIMPLE_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
 def _prettify_key(key: str) -> str:
     """Turn a raw GCP API field name into a readable label for nested-value
     rendering, e.g. "principalSubject" -> "Principal Subject",
     "sourceRanges" -> "Source Ranges". Purely cosmetic relabeling -- only
     capitalizes each token's first letter if it's lowercase, so existing
     acronym casing (IP, TTL, ...) is preserved rather than mangled.
+
+    Keys that aren't a plain camelCase/snake_case identifier (Kubernetes-
+    style annotation keys like "autoscaling.knative.dev/maxScale", which
+    Cloud Run's request objects carry) are returned verbatim instead of
+    prettified -- the word-splitting logic below only understands "_" and
+    camelCase boundaries, so running it on a dotted/slashed key produces
+    mangled output ("Autoscaling.knative.dev/max Scale") that's less
+    readable than the original, not more.
     """
+    if not _SIMPLE_KEY_RE.match(key):
+        return key
     spaced = _CAMEL_BOUNDARY_RE.sub(" ", key.replace("_", " "))
     words = spaced.split()
     if not words:
@@ -173,17 +191,24 @@ def _render_nested_value(value: Any, depth: int = 0) -> str:
             return '<span style="color:#6b7280;">(empty)</span>'
         rows = "".join(
             "<tr>"
-            '<td style="padding:2px 8px 2px 0;font-family:Arial,sans-serif;font-size:13px;'
+            '<td style="padding:3px 8px 3px 0;font-family:Arial,sans-serif;font-size:13px;'
             'font-weight:bold;color:#374151;vertical-align:top;white-space:nowrap;">'
             f"{html.escape(_prettify_key(str(k)))}</td>"
-            '<td style="padding:2px 0;font-family:Arial,sans-serif;font-size:13px;'
+            '<td style="padding:3px 0;font-family:Arial,sans-serif;font-size:13px;'
             f'color:#111827;vertical-align:top;">{_render_nested_value(v, depth + 1)}</td>'
             "</tr>"
             for k, v in value.items()
         )
+        # 14px indent per level (not the previous 6px) so 3-4 levels of real
+        # GCP request nesting (Spec > Template > Containers > Resources, a
+        # very ordinary shape) actually reads as a staircase instead of one
+        # visually flat wall of key/value pairs -- the original 6px was
+        # imperceptible past 2 levels deep, which was the actual "not
+        # clear" problem, not information density.
+        border_color = _NESTING_BORDER_COLORS[depth % len(_NESTING_BORDER_COLORS)]
         return (
             '<table role="presentation" cellpadding="0" cellspacing="0" '
-            f'style="border-left:2px solid #d1d5db;padding-left:6px;margin:2px 0;">{rows}</table>'
+            f'style="border-left:3px solid {border_color};padding-left:14px;margin:4px 0;">{rows}</table>'
         )
     if isinstance(value, list | tuple):
         if not value:
