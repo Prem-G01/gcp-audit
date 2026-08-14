@@ -18,6 +18,7 @@ RULE_IDS = [
     "billing_account_changed",
     "resource_created",
     "resource_deleted",
+    "policy_denied_access_attempt",
 ]
 
 
@@ -306,6 +307,7 @@ def test_evaluate_rules_never_raises_on_bad_rule_evaluation(tmp_path, monkeypatc
         ("billing_account_changed.json", "billing_account_changed"),
         ("resource_created.json", "resource_created"),
         ("resource_deleted.json", "resource_deleted"),
+        ("policy_denied.json", "policy_denied_access_attempt"),
     ],
 )
 def test_shipped_rule_matches_its_fixture(load_fixture, fixture_name, expected_rule_id) -> None:
@@ -313,6 +315,20 @@ def test_shipped_rule_matches_its_fixture(load_fixture, fixture_name, expected_r
     findings = engine.evaluate_rules(event)
     matched_ids = {f.rule_id for f in findings}
     assert expected_rule_id in matched_ids
+
+
+def test_policy_denied_event_does_not_also_trigger_resource_created(load_fixture) -> None:
+    """The core correctness guarantee for policy_denied_access_attempt: this
+    fixture's method_name (v1.compute.instances.insert) would otherwise
+    match resource_created's "insert|create" pattern exactly. Without
+    resource_created's raw.logName exclusion, a DENIED create attempt
+    would misreport as a real HIGH-severity resource creation that never
+    actually happened -- a false positive actively worse than noise.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("policy_denied.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert matched_ids == {"policy_denied_access_attempt"}
 
 
 def test_resource_created_excludes_cloud_build_create_build(load_fixture) -> None:
@@ -432,6 +448,7 @@ def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
         "billing_account_changed",
         "resource_created",
         "resource_deleted",
+        "policy_denied_access_attempt",
     }
     assert covered == set(RULE_IDS)
     assert {rule.id for rule in engine._RULES} == set(RULE_IDS)
@@ -604,5 +621,5 @@ def test_console_url_template_unknown_placeholder(tmp_path) -> None:
 
 def test_real_config_rules_yaml_loads_without_raising() -> None:
     rules = engine.load_rules()
-    assert len(rules) == 12
+    assert len(rules) == 13
     assert {rule.id for rule in rules} == set(RULE_IDS)

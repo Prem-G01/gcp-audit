@@ -1,0 +1,36 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "compute.googleapis.com",
+    "methodName": "v1.compute.instances.insert",
+    "resourceName": "projects/prj-dg-devops-test/zones/asia-south1-a/instances/attempted-vm",
+    "status": {
+      "code": 7,
+      "message": "PERMISSION_DENIED: Required 'compute.instances.create' permission"
+    },
+    "authenticationInfo": {
+      "principalEmail": "low-priv-sa@prj-dg-devops-test.iam.gserviceaccount.com"
+    },
+    "authorizationInfo": [
+      {
+        "permission": "compute.instances.create",
+        "granted": false,
+        "resourceAttributes": {}
+      }
+    ],
+    "requestMetadata": {
+      "callerIp": "203.0.113.77",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    }
+  },
+  "resource": {
+    "type": "gce_instance",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "ERROR",
+  "timestamp": "2026-08-14T09:00:00Z",
+  "insertId": "fixture-policy-denied-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Fpolicy"
+}

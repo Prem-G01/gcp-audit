@@ -144,9 +144,18 @@ rules:
     console_url_template: >-
       https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
     match:
-      field: method_name
-      op: contains
-      value: "SetIamPolicy"
+      all_of:
+        - field: method_name
+          op: contains
+          value: "SetIamPolicy"
+        - not:
+            field: raw.logName
+            op: contains
+            # A denied SetIamPolicy attempt carries the same method_name as
+            # a genuine one -- without this, a blocked attempt would still
+            # fire this rule and misreport it as a real policy change. Only
+            # policy_denied_access_attempt matches this log category.
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -174,9 +183,14 @@ rules:
     console_url_template: >-
       https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
     match:
-      field: method_name
-      op: equals
-      value: "google.iam.admin.v1.CreateServiceAccountKey"
+      all_of:
+        - field: method_name
+          op: equals
+          value: "google.iam.admin.v1.CreateServiceAccountKey"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -202,9 +216,14 @@ rules:
     console_url_template: >-
       https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
     match:
-      field: method_name
-      op: contains
-      value: "OrgPolicy"
+      all_of:
+        - field: method_name
+          op: contains
+          value: "OrgPolicy"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -240,6 +259,10 @@ rules:
         - field: raw.protoPayload.request
           op: contains
           value: "0.0.0.0/0"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -285,6 +308,10 @@ rules:
             - field: raw.protoPayload.response
               op: contains
               value: "allAuthenticatedUsers"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -321,6 +348,10 @@ rules:
           value: "SetIamPolicy"
         - field: raw.protoPayload.request.policy.auditConfigs
           op: exists
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -430,6 +461,16 @@ rules:
               - field: principal_email
                 op: equals
                 value: "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
+        - not:
+            field: raw.logName
+            op: contains
+            # Especially important here -- this is the catch-all, so
+            # without this exclusion EVERY denied attempt not already
+            # claimed by a more specific rule would land here instead of
+            # policy_denied_access_attempt, still reporting a blocked
+            # action's method_name as if some administrative activity had
+            # actually gone through.
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -469,6 +510,10 @@ rules:
         - field: method_name
           op: regex
           value: '(?i)(insert|create|update|patch|delete|remove|enable|disable|revoke|grant|add|attach|detach|rotate|undelete|restore|move|import|export|set)'
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal Subject (Federated Identity): raw.protoPayload.authenticationInfo.principalSubject
       Principal Email (if mapped): principal_email
@@ -499,9 +544,14 @@ rules:
     console_url_template: >-
       https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
     match:
-      field: method_name
-      op: contains
-      value: "CreateProject"
+      all_of:
+        - field: method_name
+          op: contains
+          value: "CreateProject"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -531,9 +581,14 @@ rules:
     console_url_template: >-
       https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
     match:
-      field: method_name
-      op: regex
-      value: "(BillingAccount|ProjectBillingInfo)"
+      all_of:
+        - field: method_name
+          op: regex
+          value: "(BillingAccount|ProjectBillingInfo)"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -600,6 +655,14 @@ rules:
             # in the first place. Confirmed live -- see the screenshot that
             # prompted this exclusion.
             value: "ReachabilityService.CreateConnectivityTest"
+        - not:
+            field: raw.logName
+            op: contains
+            # A denied create attempt carries the same method_name as a
+            # genuine one -- without this, a blocked attempt would still
+            # fire this rule and misreport it as a real HIGH-severity
+            # resource creation that never actually happened.
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -626,9 +689,14 @@ rules:
     console_url_template: >-
       https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
     match:
-      field: method_name
-      op: regex
-      value: "(?i)delete"
+      all_of:
+        - field: method_name
+          op: regex
+          value: "(?i)delete"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -641,6 +709,50 @@ rules:
       Caller IP: request_metadata.caller_ip
       User Agent: request_metadata.user_agent
       Requested Change: raw.protoPayload.request
+
+  # 13. IAM denied a request -- the caller attempted something they don't
+  #     have permission for. Only reachable when the log sink also forwards
+  #     Policy Denied audit logs (see terraform/modules/logging's filter --
+  #     Admin Activity logs alone never carry these). Every entry in that
+  #     log category is, by definition, a denied attempt, so identifying
+  #     the log category itself (raw.logName) IS the match condition -- no
+  #     method_name pattern needed. A single denial is often an honest
+  #     mistake (someone clicking around without realizing they lack
+  #     access), but it's also the exact signature of a compromised-but-
+  #     under-privileged credential probing what it can reach. MEDIUM
+  #     reflects that single-event ambiguity -- this rule evaluates each
+  #     event independently (no cross-event counting), so "5 denials in 10
+  #     minutes from the same principal" is a stronger signal than any one
+  #     of them alone, but isn't expressible here without a separate
+  #     stateful mechanism this pipeline doesn't have today.
+  - id: policy_denied_access_attempt
+    title: "Access denied by IAM policy"
+    description: >
+      A caller attempted an action and IAM denied it. Every rule above
+      explicitly excludes this log category (raw.logName containing
+      "%2Fpolicy") -- without those exclusions, a denied attempt would
+      still match e.g. resource_created's method_name pattern and
+      misreport a blocked action as a real, successful change.
+    severity: MEDIUM
+    ai_analysis: false
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      field: raw.logName
+      op: contains
+      value: "cloudaudit.googleapis.com%2Fpolicy"
+    fields:
+      Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Event Time (IST): event_timestamp
+      Method (Attempted): method_name
+      Resource: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Denied Permissions: raw.protoPayload.authorizationInfo
+      Denial Detail: raw.protoPayload.status
 
   # -----------------------------------------------------------------------
   # TEMPLATE -- copy this, fill it in, and add it to the list above. This

@@ -31,9 +31,19 @@ variable "destination_topic_id" {
 }
 
 variable "filter" {
-  description = "Log sink filter. Defaults to Admin Activity audit logs only -- every shipped rule targets mutating calls, and Data Access logs are high-volume/often disabled by default."
+  description = <<-EOT
+    Log sink filter. Defaults to Admin Activity + Policy Denied audit
+    logs -- every shipped rule targets mutating calls or denied access
+    attempts; Data Access logs are excluded (high-volume/often disabled
+    by default). config/rules.yaml's policy_denied_access_attempt rule
+    is the only rule that matches a Policy Denied entry -- every other
+    rule explicitly excludes raw.logName containing "%2Fpolicy", since a
+    denied call's method_name would otherwise still match e.g.
+    resource_created's "insert|create" pattern and misreport a blocked
+    action as if it had succeeded.
+  EOT
   type        = string
-  default     = "logName:\"/logs/cloudaudit.googleapis.com%2Factivity\""
+  default     = "logName:\"/logs/cloudaudit.googleapis.com%2Factivity\" OR logName:\"/logs/cloudaudit.googleapis.com%2Fpolicy\""
 }
 
 variable "project_sink_enabled" {
