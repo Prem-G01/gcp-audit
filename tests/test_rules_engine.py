@@ -19,6 +19,7 @@ RULE_IDS = [
     "resource_created",
     "resource_deleted",
     "policy_denied_access_attempt",
+    "bulk_data_export_or_download",
 ]
 
 
@@ -308,6 +309,8 @@ def test_evaluate_rules_never_raises_on_bad_rule_evaluation(tmp_path, monkeypatc
         ("resource_created.json", "resource_created"),
         ("resource_deleted.json", "resource_deleted"),
         ("policy_denied.json", "policy_denied_access_attempt"),
+        ("bigquery_extract_job.json", "bulk_data_export_or_download"),
+        ("gcs_object_download.json", "bulk_data_export_or_download"),
     ],
 )
 def test_shipped_rule_matches_its_fixture(load_fixture, fixture_name, expected_rule_id) -> None:
@@ -329,6 +332,56 @@ def test_policy_denied_event_does_not_also_trigger_resource_created(load_fixture
     findings = engine.evaluate_rules(event)
     matched_ids = {f.rule_id for f in findings}
     assert matched_ids == {"policy_denied_access_attempt"}
+
+
+def test_bigquery_query_job_does_not_trigger_any_rule(load_fixture) -> None:
+    """A plain SELECT is a BigQuery JobService.InsertJob call under the
+    Data Access log category -- "Insert" in the method_name would
+    otherwise misfire resource_created, and being an ordinary read (not an
+    EXTRACT), it must also NOT match bulk_data_export_or_download. The
+    rule engine deliberately doesn't alert on every read -- see that
+    rule's description for the noise tradeoff.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("bigquery_query_job.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
+
+
+def test_bigquery_extract_job_triggers_bulk_data_export_and_nothing_else(load_fixture) -> None:
+    event = EnrichedEvent.from_log_entry(load_fixture("bigquery_extract_job.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert matched_ids == {"bulk_data_export_or_download"}
+
+
+def test_gcs_object_download_triggers_bulk_data_export_and_nothing_else(load_fixture) -> None:
+    event = EnrichedEvent.from_log_entry(load_fixture("gcs_object_download.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert matched_ids == {"bulk_data_export_or_download"}
+
+
+def test_gcs_object_download_by_platforms_own_sa_does_not_trigger(load_fixture) -> None:
+    """Self-noise exclusion: this platform's own runtime SA reading a GCS
+    object (e.g. its own deployed source) shouldn't self-alert, mirroring
+    the FunctionService.UpdateFunction self-noise exclusion on
+    unclassified_admin_activity.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("gcs_object_download_platform_self.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
+
+
+def test_gcs_object_delete_does_not_trigger_resource_deleted(load_fixture) -> None:
+    """storage.objects.delete is a Data Access DATA_WRITE entry, not Admin
+    Activity -- "delete" in the method_name would otherwise misfire
+    resource_deleted. Object deletes are deliberately out of
+    bulk_data_export_or_download's scope too (only EXTRACT + get are
+    covered) -- see that rule's description for why.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("gcs_object_delete.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
 
 
 def test_resource_created_excludes_cloud_build_create_build(load_fixture) -> None:
@@ -449,6 +502,7 @@ def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
         "resource_created",
         "resource_deleted",
         "policy_denied_access_attempt",
+        "bulk_data_export_or_download",
     }
     assert covered == set(RULE_IDS)
     assert {rule.id for rule in engine._RULES} == set(RULE_IDS)
@@ -621,5 +675,5 @@ def test_console_url_template_unknown_placeholder(tmp_path) -> None:
 
 def test_real_config_rules_yaml_loads_without_raising() -> None:
     rules = engine.load_rules()
-    assert len(rules) == 13
+    assert len(rules) == 14
     assert {rule.id for rule in rules} == set(RULE_IDS)

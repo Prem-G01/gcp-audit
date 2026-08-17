@@ -1,0 +1,25 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "storage.googleapis.com",
+    "methodName": "storage.objects.get",
+    "resourceName": "projects/_/buckets/some-bucket/objects/customer-export.csv",
+    "authenticationInfo": {
+      "principalEmail": "heidi@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.55",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    }
+  },
+  "resource": {
+    "type": "gcs_bucket",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-14T09:35:00Z",
+  "insertId": "fixture-gcs-download-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Fdata_access"
+}

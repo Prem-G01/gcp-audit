@@ -1,3 +1,55 @@
+# The effective sink filter -- Admin Activity + Policy Denied are always
+# on; Data Access is appended only when include_data_access_logs = true.
+# A plain string default (like the old `filter` variable) can't depend on
+# another variable's value, so this is computed as a local instead.
+locals {
+  filter_categories = concat(
+    [
+      "logName:\"/logs/cloudaudit.googleapis.com%2Factivity\"",
+      "logName:\"/logs/cloudaudit.googleapis.com%2Fpolicy\"",
+    ],
+    var.include_data_access_logs ? ["logName:\"/logs/cloudaudit.googleapis.com%2Fdata_access\""] : [],
+  )
+  effective_filter = join(" OR ", local.filter_categories)
+
+  # Every (folder, service) pair needing a google_folder_iam_audit_config,
+  # e.g. {"159249143908/bigquery.googleapis.com" = {folder = ..., service = ...}}.
+  # Empty (no resources created) unless include_data_access_logs = true --
+  # this is what actually makes GCP START GENERATING Data Access log
+  # entries; the filter change above only controls what an already-existing
+  # entry gets forwarded to.
+  #
+  # Scoped to monitored_folder_ids only, matching this platform's actual
+  # sink topology today (deployment_mode = "project_only", no org sink, no
+  # additional_monitored_project_ids in use) -- a project brought in via
+  # the org sink or additional_monitored_project_ids instead would need an
+  # equivalent org/project-level audit config added alongside this if this
+  # feature is ever needed there too.
+  data_access_audit_pairs = var.include_data_access_logs ? {
+    for pair in setproduct(var.monitored_folder_ids, var.data_access_audit_services) :
+    "${pair[0]}/${pair[1]}" => { folder = pair[0], service = pair[1] }
+  } : {}
+}
+
+# Turns on Data Access (DATA_READ + DATA_WRITE) log GENERATION for the
+# listed services on every monitored folder -- without this, no Data
+# Access log entry is ever created in the first place, regardless of the
+# sink filter above. The `folder` argument requires the "folders/" prefix
+# (unlike google_logging_folder_sink's bare-or-prefixed flexibility).
+resource "google_folder_iam_audit_config" "data_access" {
+  for_each = local.data_access_audit_pairs
+
+  folder  = "folders/${each.value.folder}"
+  service = each.value.service
+
+  audit_log_config {
+    log_type = "DATA_READ"
+  }
+  audit_log_config {
+    log_type = "DATA_WRITE"
+  }
+}
+
 # Org-wide aggregated log sink -> Pub/Sub, gated by `enabled`
 # (deployment_mode == "full"). google_logging_organization_sink does not
 # support the `labels` argument -- GCP log sinks don't have resource
@@ -14,7 +66,7 @@ resource "google_logging_organization_sink" "audit_activity" {
   name             = var.sink_name
   org_id           = var.org_id
   destination      = "pubsub.googleapis.com/${var.destination_topic_id}"
-  filter           = var.filter
+  filter           = local.effective_filter
   include_children = true
 
   description = "Org-wide Admin Activity audit logs, aggregated for the alerting pipeline."
@@ -41,7 +93,7 @@ resource "google_logging_project_sink" "audit_activity" {
   name                   = "${var.sink_name}-project"
   project                = var.destination_project_id
   destination            = "pubsub.googleapis.com/${var.destination_topic_id}"
-  filter                 = var.filter
+  filter                 = local.effective_filter
   unique_writer_identity = true
 
   description = "This project's own Admin Activity audit logs, feeding the alerting pipeline while the org-level sink is disabled."
@@ -70,7 +122,7 @@ resource "google_logging_project_sink" "additional_monitored" {
   name                   = "${var.sink_name}-project"
   project                = each.value
   destination            = "pubsub.googleapis.com/${var.destination_topic_id}"
-  filter                 = var.filter
+  filter                 = local.effective_filter
   unique_writer_identity = true
 
   description = "Admin Activity audit logs from ${each.value}, feeding the central alerting pipeline in ${var.destination_project_id}."
@@ -99,7 +151,7 @@ resource "google_logging_folder_sink" "monitored_folder" {
   name             = "${var.sink_name}-folder"
   folder           = each.value
   destination      = "pubsub.googleapis.com/${var.destination_topic_id}"
-  filter           = var.filter
+  filter           = local.effective_filter
   include_children = true
 
   description = "Admin Activity audit logs from folder ${each.value} and everything nested under it, feeding the central alerting pipeline in ${var.destination_project_id}."

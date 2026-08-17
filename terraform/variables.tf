@@ -57,6 +57,27 @@ variable "org_id" {
   default     = ""
 }
 
+variable "enable_data_access_logs" {
+  description = <<-EOT
+    Whether to monitor Data Access audit logs (BigQuery + Cloud Storage
+    DATA_READ/DATA_WRITE, per modules/logging's data_access_audit_services)
+    in addition to the always-on Admin Activity + Policy Denied logs. Off
+    by default -- Data Access logs are high-volume (every query/object
+    read counts) and need a separate, explicit opt-in. When true, the
+    deploy SA also needs roles/resourcemanager.folderIamAdmin (not just
+    the roles/logging.admin already required for monitored_folder_ids) on
+    every folder in monitored_folder_ids, since Data Access log
+    GENERATION is controlled by a folder IAM audit config, a different
+    permission than creating a log sink:
+
+      gcloud resource-manager folders add-iam-policy-binding FOLDER_ID \
+        --member="serviceAccount:tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com" \
+        --role="roles/resourcemanager.folderIamAdmin"
+  EOT
+  type        = bool
+  default     = false
+}
+
 check "org_id_required_for_full_deployment" {
   assert {
     condition     = var.deployment_mode != "full" || var.org_id != ""

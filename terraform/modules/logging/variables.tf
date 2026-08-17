@@ -30,20 +30,43 @@ variable "destination_topic_id" {
   type        = string
 }
 
-variable "filter" {
+variable "include_data_access_logs" {
   description = <<-EOT
-    Log sink filter. Defaults to Admin Activity + Policy Denied audit
-    logs -- every shipped rule targets mutating calls or denied access
-    attempts; Data Access logs are excluded (high-volume/often disabled
-    by default). config/rules.yaml's policy_denied_access_attempt rule
-    is the only rule that matches a Policy Denied entry -- every other
-    rule explicitly excludes raw.logName containing "%2Fpolicy", since a
-    denied call's method_name would otherwise still match e.g.
-    resource_created's "insert|create" pattern and misreport a blocked
-    action as if it had succeeded.
+    Whether to (a) add Data Access audit logs ("%2Fdata_access") to the
+    sink filter, alongside the always-on Admin Activity + Policy Denied
+    categories, and (b) create the google_folder_iam_audit_config
+    resources (data_access_audit_services, below) needed to actually
+    make GCP generate those log entries in the first place -- Data
+    Access logs are entirely absent by default; a sink filter alone
+    forwards nothing without this. Off by default: Data Access logs are
+    high-volume (every read counts), so this is a deliberate opt-in, not
+    part of the baseline. config/rules.yaml's bulk_data_export_or_download
+    rule is the only rule that matches this log category -- every other
+    rule explicitly excludes raw.logName containing "%2Fdata_access", for
+    the same reason every rule already excludes "%2Fpolicy": a BigQuery
+    query job's method_name legitimately contains "InsertJob", which
+    would otherwise misfire resource_created's "insert|create" pattern on
+    a plain SELECT.
   EOT
-  type        = string
-  default     = "logName:\"/logs/cloudaudit.googleapis.com%2Factivity\" OR logName:\"/logs/cloudaudit.googleapis.com%2Fpolicy\""
+  type        = bool
+  default     = false
+}
+
+variable "data_access_audit_services" {
+  description = <<-EOT
+    Services to enable Data Access (DATA_READ + DATA_WRITE) audit
+    logging for, applied at every folder in monitored_folder_ids via
+    google_folder_iam_audit_config. Only takes effect when
+    include_data_access_logs = true. Keep this list narrow -- each
+    additional service can add significant log volume/cost ("allServices"
+    would log every read of every GCP API call, org-wide). ADMIN_READ is
+    deliberately never enabled here -- it logs every metadata Get/List
+    call (bucket/dataset listings, etc.), which is pure noise for this
+    platform's purpose and not something config/rules.yaml's Data Access
+    rule looks for.
+  EOT
+  type        = list(string)
+  default     = ["bigquery.googleapis.com", "storage.googleapis.com"]
 }
 
 variable "project_sink_enabled" {

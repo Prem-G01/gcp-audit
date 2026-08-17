@@ -48,6 +48,7 @@ module "logging" {
   project_sink_enabled             = local.project_sink_enabled
   additional_monitored_project_ids = var.additional_monitored_project_ids
   monitored_folder_ids             = var.monitored_folder_ids
+  include_data_access_logs         = var.enable_data_access_logs
   org_id                           = var.org_id
   destination_project_id           = var.project_id
   destination_topic_name           = module.pubsub.main_topic_name

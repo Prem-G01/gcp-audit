@@ -1,0 +1,38 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "bigquery.googleapis.com",
+    "methodName": "google.cloud.bigquery.v2.JobService.InsertJob",
+    "resourceName": "projects/prj-dg-devops-test/jobs/bquxjob_extract_001",
+    "authenticationInfo": {
+      "principalEmail": "heidi@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.44",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "metadata": {
+      "jobChange": {
+        "job": {
+          "jobConfig": {
+            "type": "EXTRACT",
+            "extractConfig": {
+              "sourceTable": "projects/prj-dg-devops-test/datasets/reporting/tables/customers",
+              "destinationUris": ["gs://some-bucket/exports/customers-*.csv"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "resource": {
+    "type": "bigquery_dataset",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-14T09:30:00Z",
+  "insertId": "fixture-bigquery-extract-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Fdata_access"
+}
