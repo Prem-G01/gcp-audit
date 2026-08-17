@@ -62,6 +62,8 @@ recipients:
   INFO:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+    - udayakrishna.duraisamy@securekloud.com
+
 
   # Used when a finding's severity has no explicit entry above.
   default:
