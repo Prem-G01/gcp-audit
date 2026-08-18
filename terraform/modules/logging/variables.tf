@@ -52,6 +52,23 @@ variable "include_data_access_logs" {
   default     = false
 }
 
+variable "include_system_event_logs" {
+  description = <<-EOT
+    Whether to add System Event audit logs ("%2Fsystem_event") to the sink
+    filter. Unlike include_data_access_logs, there's no equivalent
+    google_folder_iam_audit_config needed -- Google writes System Event
+    entries unconditionally for every project (VM host maintenance/
+    preemption, live migration, instance-group auto-healing recreating an
+    instance, etc.), so this flag purely controls whether they're
+    forwarded to this pipeline. Off by default for the same "explicit
+    opt-in per log category" reasoning as include_data_access_logs, even
+    though System Event volume is typically much lower (bounded by actual
+    infrastructure churn, not every read/query).
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "data_access_audit_services" {
   description = <<-EOT
     Services to enable Data Access (DATA_READ + DATA_WRITE) audit

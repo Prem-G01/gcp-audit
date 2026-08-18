@@ -1,7 +1,15 @@
 # The effective sink filter -- Admin Activity + Policy Denied are always
-# on; Data Access is appended only when include_data_access_logs = true.
-# A plain string default (like the old `filter` variable) can't depend on
-# another variable's value, so this is computed as a local instead.
+# on; Data Access and System Event are appended only when their respective
+# include_* flags are true. A plain string default (like the old `filter`
+# variable) can't depend on another variable's value, so this is computed
+# as a local instead.
+#
+# System Event is simpler than Data Access: Google writes these
+# unconditionally for every project (VM host maintenance/preemption,
+# instance-group auto-healing, etc.) -- unlike Data Access, there's no
+# equivalent "log generation" switch to turn on (no IAM audit config
+# resource needed here), only the filter decides whether they reach this
+# pipeline at all.
 locals {
   filter_categories = concat(
     [
@@ -9,6 +17,7 @@ locals {
       "logName:\"/logs/cloudaudit.googleapis.com%2Fpolicy\"",
     ],
     var.include_data_access_logs ? ["logName:\"/logs/cloudaudit.googleapis.com%2Fdata_access\""] : [],
+    var.include_system_event_logs ? ["logName:\"/logs/cloudaudit.googleapis.com%2Fsystem_event\""] : [],
   )
   effective_filter = join(" OR ", local.filter_categories)
 

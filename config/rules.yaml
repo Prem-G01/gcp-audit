@@ -163,6 +163,14 @@ rules:
             # practice, but excluded for the same reason every rule here
             # is: only bulk_data_export_or_download matches this category.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # A System Event SetIamPolicy call doesn't occur either
+            # (System Event is Google-generated infra churn, never a user
+            # IAM call) -- excluded for the same defense-in-depth
+            # consistency as every rule here.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -206,6 +214,12 @@ rules:
             # depth reasoning as every other rule, not a known false-
             # positive risk.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # Same reasoning, System Event category: CreateServiceAccountKey
+            # never occurs there either.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -246,6 +260,12 @@ rules:
             # Access -- excluded for defense-in-depth consistency, not a
             # known false-positive risk.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # Same reasoning, System Event category: an OrgPolicy call
+            # never occurs there either.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -292,6 +312,12 @@ rules:
             # Data Access -- excluded for defense-in-depth consistency,
             # not a known false-positive risk.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # Same reasoning, System Event category: a firewall
+            # insert/patch call never occurs there either.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -348,6 +374,12 @@ rules:
             # Access -- excluded for defense-in-depth consistency, not a
             # known false-positive risk.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # Same reasoning, System Event category: a SetIamPolicy call
+            # never occurs there either.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -395,6 +427,12 @@ rules:
             # Access -- excluded for defense-in-depth consistency, not a
             # known false-positive risk.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # Same reasoning, System Event category: a SetIamPolicy call
+            # never occurs there either.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -439,18 +477,22 @@ rules:
       A genuine catch-all for Admin Activity: this rule explicitly
       excludes Data Access log entries (raw.logName containing
       "%2Fdata_access", only present at all when
-      modules/logging's include_data_access_logs = true) below, since
+      modules/logging's include_data_access_logs = true) and System Event
+      entries ("%2Fsystem_event", include_system_event_logs) below, since
       Google never writes a read-only Get/List/Watch call to the Admin
       Activity category -- so every Admin Activity event reaching this
       pipeline is ALREADY a mutating call, guaranteed by the log category
       itself, not by anything this rule re-derives from the method name.
-      Data Access entries carry no such guarantee (most are plain reads),
-      which is exactly why they're excluded rather than folded into this
-      same catch-all -- see bulk_data_export_or_download for what's
-      alerted on there instead. This rule fires on every Admin Activity
-      event that isn't specifically covered by another rule (SetIamPolicy,
-      an OrgPolicy method, or create/delete -- rules 11/12 cover those at
-      HIGH severity instead). Previously this matched only a hand-picked
+      Data Access and System Event entries carry no such guarantee (most
+      Data Access entries are plain reads; System Event entries are
+      Google-generated infrastructure churn, not a human/SA action at
+      all), which is exactly why they're excluded rather than folded into
+      this same catch-all -- see bulk_data_export_or_download and
+      system_event_occurred for what's alerted on there instead. This
+      rule fires on every Admin Activity event that isn't specifically
+      covered by another rule (SetIamPolicy, an OrgPolicy method, or
+      create/delete -- rules 11/12 cover those at HIGH severity instead).
+      Previously this matched only a hand-picked
       whitelist of verbs (update/patch/remove/enable/...), which silently
       missed real modifications using any other verb -- e.g.
       compute.instances.setMachineType (VM resize) and
@@ -530,6 +572,17 @@ rules:
             # turned on. Only bulk_data_export_or_download matches this
             # log category.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # ALSO load-bearing once System Event logs are on: none of
+            # System Event's method names (preempted, hostError,
+            # automaticRestart, guestTerminate, terminateOnHostMaintenance,
+            # recreateInstance, stop, start, reset) are covered by the
+            # insert/create/delete/SetIamPolicy/OrgPolicy exclusions above
+            # -- without this, every one of them would flood in here too.
+            # system_event_occurred is the rule that watches this category.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -583,6 +636,14 @@ rules:
             # had performed a mutating action. bulk_data_export_or_download
             # is the rule that watches federated/any-principal exports.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # System Event entries have no real "federated identity"
+            # principal in practice (they're Google-generated, not a WIF
+            # caller) -- excluded for defense-in-depth consistency, not a
+            # known false-positive risk.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal Subject (Federated Identity): raw.protoPayload.authenticationInfo.principalSubject
       Principal Email (if mapped): principal_email
@@ -628,6 +689,12 @@ rules:
             # excluded for defense-in-depth consistency, not a known
             # false-positive risk.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # Same reasoning, System Event category: CreateProject never
+            # occurs there either.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -672,6 +739,12 @@ rules:
             # Access -- excluded for defense-in-depth consistency, not a
             # known false-positive risk.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # Same reasoning, System Event category: billing methods never
+            # occur there either.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -759,6 +832,16 @@ rules:
             # to bulk_data_export_or_download's DATA_WRITE story, not this
             # rule's "a VM/bucket/network now exists" story.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # ALSO load-bearing once System Event logs are on: a Managed
+            # Instance Group's auto-healing recreating an unhealthy
+            # instance can show up as a System Event compute.instances.
+            # insert -- that's automated infrastructure self-repair, not
+            # "someone created a resource". system_event_occurred is the
+            # rule that watches this category instead.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -803,6 +886,16 @@ rules:
             # so it belongs to bulk_data_export_or_download's story
             # instead, not this rule's.
             value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            # ALSO load-bearing once System Event logs are on: a Managed
+            # Instance Group's autoscaler scaling down can show up as a
+            # System Event compute.instances.delete -- automated capacity
+            # management, not "someone deleted a resource".
+            # system_event_occurred is the rule that watches this category
+            # instead.
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -937,6 +1030,50 @@ rules:
       Caller IP: request_metadata.caller_ip
       User Agent: request_metadata.user_agent
       Data Access Detail: raw.protoPayload.metadata
+
+  # 15. System Event catch-all -- the mirror of unclassified_admin_activity
+  #     for the System Event log category, only reachable when
+  #     modules/logging's include_system_event_logs = true. Unlike Data
+  #     Access, System Event volume is inherently bounded (driven by
+  #     actual infrastructure churn -- host maintenance, preemption, live
+  #     migration, instance-group auto-healing/autoscaling -- not by every
+  #     read/query), so a genuine catch-all is safe here the way it
+  #     wouldn't have been for Data Access. LOW severity: these are
+  #     Google-generated events, not a human/SA action, so they carry far
+  #     less attacker-relevance than an equivalent Admin Activity event --
+  #     this is operational visibility (e.g. "a VM you didn't touch just
+  #     went down"), not a security judgment call, hence ai_analysis:
+  #     false too.
+  - id: system_event_occurred
+    title: "System event occurred"
+    description: >
+      A System Event log entry was recorded -- e.g. a VM host
+      maintenance/preemption/live-migration event, or a managed instance
+      group's auto-healing/autoscaling action. These are written by
+      Google's own infrastructure, never by a user or service account
+      directly, so principal fields are typically empty. Every other rule
+      in this file excludes this log category (raw.logName containing
+      "%2Fsystem_event") -- without those exclusions, e.g. a Managed
+      Instance Group auto-healing an instance would misfire
+      resource_created (its method_name legitimately contains "insert"),
+      and unclassified_admin_activity's catch-all would alert on every
+      host maintenance event once System Event logs are enabled.
+    severity: LOW
+    ai_analysis: false
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      field: raw.logName
+      op: contains
+      value: "cloudaudit.googleapis.com%2Fsystem_event"
+    fields:
+      Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Event Time (IST): event_timestamp
+      Method: method_name
+      Resource: resource_name
+      Project: project_id
+      Event Detail: raw.protoPayload.request
 
   # -----------------------------------------------------------------------
   # TEMPLATE -- copy this, fill it in, and add it to the list above. This

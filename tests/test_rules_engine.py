@@ -20,6 +20,7 @@ RULE_IDS = [
     "resource_deleted",
     "policy_denied_access_attempt",
     "bulk_data_export_or_download",
+    "system_event_occurred",
 ]
 
 
@@ -311,6 +312,7 @@ def test_evaluate_rules_never_raises_on_bad_rule_evaluation(tmp_path, monkeypatc
         ("policy_denied.json", "policy_denied_access_attempt"),
         ("bigquery_extract_job.json", "bulk_data_export_or_download"),
         ("gcs_object_download.json", "bulk_data_export_or_download"),
+        ("system_event_preempted.json", "system_event_occurred"),
     ],
 )
 def test_shipped_rule_matches_its_fixture(load_fixture, fixture_name, expected_rule_id) -> None:
@@ -382,6 +384,45 @@ def test_gcs_object_delete_does_not_trigger_resource_deleted(load_fixture) -> No
     event = EnrichedEvent.from_log_entry(load_fixture("gcs_object_delete.json"))
     findings = engine.evaluate_rules(event)
     assert findings == []
+
+
+def test_system_event_instance_group_recreate_does_not_trigger_resource_created(load_fixture) -> None:
+    """A Managed Instance Group's auto-healing recreating an unhealthy
+    instance shows up as a System Event compute.instances.insert -- "Insert"
+    in the method_name would otherwise misfire resource_created's HIGH
+    "resource created" rule on automated infrastructure self-repair, not a
+    real user-driven resource creation.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("system_event_instance_group_recreate.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert matched_ids == {"system_event_occurred"}
+
+
+def test_system_event_autoscaler_delete_does_not_trigger_resource_deleted(load_fixture) -> None:
+    """An autoscaler scaling down shows up as a System Event
+    compute.instances.delete -- "delete" in the method_name would
+    otherwise misfire resource_deleted's HIGH rule on routine automated
+    capacity management.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("system_event_autoscaler_delete.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert matched_ids == {"system_event_occurred"}
+
+
+def test_system_event_does_not_flood_unclassified_admin_activity(load_fixture) -> None:
+    """A host-maintenance-style System Event (a verb not covered by any
+    other rule's exclusions -- "preempted" matches neither insert/create
+    nor delete nor SetIamPolicy/OrgPolicy) would otherwise flood
+    unclassified_admin_activity's MEDIUM catch-all the moment System Event
+    logs are enabled.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("system_event_preempted.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert "unclassified_admin_activity" not in matched_ids
+    assert matched_ids == {"system_event_occurred"}
 
 
 def test_resource_created_excludes_cloud_build_create_build(load_fixture) -> None:
@@ -503,6 +544,7 @@ def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
         "resource_deleted",
         "policy_denied_access_attempt",
         "bulk_data_export_or_download",
+        "system_event_occurred",
     }
     assert covered == set(RULE_IDS)
     assert {rule.id for rule in engine._RULES} == set(RULE_IDS)
@@ -675,5 +717,5 @@ def test_console_url_template_unknown_placeholder(tmp_path) -> None:
 
 def test_real_config_rules_yaml_loads_without_raising() -> None:
     rules = engine.load_rules()
-    assert len(rules) == 14
+    assert len(rules) == 15
     assert {rule.id for rule in rules} == set(RULE_IDS)

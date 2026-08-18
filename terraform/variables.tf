@@ -78,6 +78,21 @@ variable "enable_data_access_logs" {
   default     = false
 }
 
+variable "enable_system_event_logs" {
+  description = <<-EOT
+    Whether to monitor System Event audit logs (VM host maintenance/
+    preemption, live migration, instance-group auto-healing, etc.) in
+    addition to Admin Activity + Policy Denied. Off by default, same
+    explicit-opt-in reasoning as enable_data_access_logs -- but simpler to
+    turn on: System Event entries are written unconditionally by Google,
+    so no extra IAM grant is needed beyond what monitored_folder_ids
+    already requires (roles/logging.admin) -- this is purely a sink
+    filter change.
+  EOT
+  type        = bool
+  default     = false
+}
+
 check "org_id_required_for_full_deployment" {
   assert {
     condition     = var.deployment_mode != "full" || var.org_id != ""

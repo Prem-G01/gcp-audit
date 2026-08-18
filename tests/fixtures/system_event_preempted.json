@@ -1,0 +1,19 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "compute.googleapis.com",
+    "methodName": "compute.instances.preempted",
+    "resourceName": "projects/prj-dg-devops-test/zones/asia-south1-a/instances/spot-vm-1",
+    "authenticationInfo": {}
+  },
+  "resource": {
+    "type": "gce_instance",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "INFO",
+  "timestamp": "2026-08-14T10:00:00Z",
+  "insertId": "fixture-system-event-preempted-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Fsystem_event"
+}
