@@ -34,6 +34,24 @@
 # be sent and (for the ai_analysis: true rules) real Vertex AI/Gemini
 # calls, so it's not entirely free or silent -- hence the confirmation
 # prompt below.
+#
+# Events 17-20 are REGRESSION CHECKS, not rule-coverage events -- each one
+# is shaped exactly like a self-noise source that has ACTUALLY fired a
+# real false alert in production before being caught and excluded
+# (numeric-ID-form impersonation of this platform's own two SAs; reads of
+# its own tfstate/function-source buckets). Every one of these MUST
+# produce zero findings. Unlike events 1-16, this script does NOT just
+# tell you to go read logs for these -- it waits, then automatically
+# queries BigQuery (every finding is persisted whether sent or not) for
+# any of them by their tagged raw_log_id, and prints PASS/FAIL. This is
+# the whole point: the last two live incidents (impersonation self-
+# signing, tfstate reads) were only caught because someone happened to
+# run a manual bq query well after the fact. Run this script BEFORE a
+# terraform apply that touches config/rules.yaml, and a regression like
+# either of those gets caught here instead of in production.
+#
+# Requires: bq CLI, already authenticated (same gcloud session used for
+# the Pub/Sub publish calls below).
 
 $ErrorActionPreference = "Stop"
 
@@ -43,8 +61,9 @@ $DelayBetweenEventsSeconds = 5
 
 Write-Host "Project: $Project"
 Write-Host "Topic:   $Topic"
-Write-Host "This publishes 16 synthetic events (matching all 16 rules, several with"
-Write-Host "intentional overlap) and will trigger real emails and some real Gemini calls."
+Write-Host "This publishes 20 synthetic events (16 matching all 16 rules, several with"
+Write-Host "intentional overlap, plus 4 regression checks for known self-noise sources)"
+Write-Host "and will trigger real emails and some real Gemini calls."
 Write-Host ""
 $Confirmation = Read-Host "Type 'test' to continue"
 if ($Confirmation -ne "test") {
@@ -354,10 +373,85 @@ Publish-AuditEvent -Name "DATA ACCESS: GenerateAccessToken impersonation (expect
     insertId  = New-InsertId "test-impersonation"
     logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
 }
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 17. REGRESSION CHECK -- runtime SA self-signs a JWT, numeric-ID form ---
+# This is EXACTLY what fired a real HIGH alert (with a real Gemini call)
+# on every single Gmail send until caught live and fixed -- the first
+# version of service_account_impersonation's self-noise exclusion only
+# matched the SA's EMAIL form; GCP actually logs SignJwt's target in
+# numeric uniqueId form. MUST produce zero findings.
+$RegressionInsertIds = @()
+$iid = New-InsertId "test-noise-selfsign-jwt"
+$RegressionInsertIds += $iid
+Publish-AuditEvent -Name "REGRESSION CHECK: runtime SA self-signs JWT, numeric-ID form (MUST be zero alerts)" -Payload @{
+    protoPayload = @{
+        methodName          = "google.iam.credentials.v1.IAMCredentials.SignJwt"
+        resourceName        = "projects/-/serviceAccounts/108550589402351078214"
+        authenticationInfo  = @{ principalEmail = "audit-platform-sa-prj-dg-devop@$Project.iam.gserviceaccount.com" }
+    }
+    resource  = @{ type = "service_account"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = $iid
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 18. REGRESSION CHECK -- Terraform impersonates the deploy SA, numeric-ID form
+$iid = New-InsertId "test-noise-tf-impersonation"
+$RegressionInsertIds += $iid
+Publish-AuditEvent -Name "REGRESSION CHECK: Terraform impersonates deploy SA, numeric-ID form (MUST be zero alerts)" -Payload @{
+    protoPayload = @{
+        methodName          = "google.iam.credentials.v1.IAMCredentials.GenerateAccessToken"
+        resourceName        = "projects/-/serviceAccounts/113755025732014374847"
+        authenticationInfo  = @{ principalEmail = "test-operator@example.com" }
+    }
+    resource  = @{ type = "service_account"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = $iid
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 19. REGRESSION CHECK -- read of this platform's own tfstate bucket ----
+$iid = New-InsertId "test-noise-tfstate-read"
+$RegressionInsertIds += $iid
+Publish-AuditEvent -Name "REGRESSION CHECK: GCS read of the tfstate bucket (MUST be zero alerts)" -Payload @{
+    protoPayload = @{
+        methodName          = "storage.objects.get"
+        resourceName        = "projects/_/buckets/$Project-tfstate/objects/audit-platform/state/default.tfstate"
+        authenticationInfo  = @{ principalEmail = "test-operator@example.com" }
+    }
+    resource  = @{ type = "gcs_bucket"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = $iid
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 20. REGRESSION CHECK -- read of this platform's own function-source bucket
+$iid = New-InsertId "test-noise-function-source-read"
+$RegressionInsertIds += $iid
+Publish-AuditEvent -Name "REGRESSION CHECK: GCS read of the function-source bucket (MUST be zero alerts)" -Payload @{
+    protoPayload = @{
+        methodName          = "storage.objects.get"
+        resourceName        = "projects/_/buckets/$Project-function-source/objects/source-test.zip"
+        authenticationInfo  = @{ principalEmail = "service-88240501906@gcf-admin-robot.iam.gserviceaccount.com" }
+    }
+    resource  = @{ type = "gcs_bucket"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = $iid
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+}
 
 Write-Host ""
-Write-Host "All 16 events published. Wait ~60s (10 findings also call Gemini, which"
-Write-Host "adds latency), then check:"
+Write-Host "All 20 events published (16 rule-coverage + 4 regression checks)."
+Write-Host ""
+Write-Host "To inspect the full run manually, check:"
 Write-Host ""
 Write-Host "  gcloud functions logs read process-audit-log-gmail-alerts ``"
 Write-Host "    --project=$Project --region=asia-south1 --gen2 --limit=350"
@@ -388,3 +482,40 @@ Write-Host "  C (Clean Enterprise)    -- unclassified_admin_activity,"
 Write-Host "                             policy_denied_access_attempt, system_event_occurred"
 Write-Host "  D (Executive Summary)   -- public_iam_grant, billing_account_changed"
 Write-Host "  E (Engineer Detail)     -- firewall_open_to_internet, service_account_key_created"
+Write-Host ""
+
+# --- Automated regression check -------------------------------------------
+# This is the actual point of events 17-20: don't just print instructions
+# and hope someone remembers to check -- wait for processing, then query
+# BigQuery (every finding is persisted whether sent or not) for any of the
+# 4 tagged noise-shaped events, and give a clear PASS/FAIL. Run this BEFORE
+# a terraform apply that touches config/rules.yaml -- the last two live
+# incidents (impersonation self-signing, tfstate reads) were only caught
+# because someone happened to run this exact kind of query well after the
+# fact, in production.
+$RegressionWaitSeconds = 90
+Write-Host "Waiting ${RegressionWaitSeconds}s for processing, then checking for noise regressions..."
+Start-Sleep -Seconds $RegressionWaitSeconds
+
+$idList = ($RegressionInsertIds | ForEach-Object { "'$_'" }) -join ", "
+$query = "SELECT rule_id, raw_log_id, resource_name FROM ``$Project.audit_platform.alert_events`` WHERE raw_log_id IN ($idList)"
+$resultJson = bq query --use_legacy_sql=false --format=json $query
+$result = $resultJson | ConvertFrom-Json
+
+Write-Host ""
+if ($result -and $result.Count -gt 0) {
+    Write-Host "REGRESSION DETECTED -- $($result.Count) noise-shaped event(s) that should have" -ForegroundColor Red
+    Write-Host "produced ZERO findings actually matched a rule:" -ForegroundColor Red
+    Write-Host ""
+    $result | ForEach-Object {
+        Write-Host "  rule_id=$($_.rule_id)  raw_log_id=$($_.raw_log_id)" -ForegroundColor Red
+        Write-Host "    resource_name=$($_.resource_name)" -ForegroundColor Red
+    }
+    Write-Host ""
+    Write-Host "A self-noise exclusion in config/rules.yaml is broken. Do NOT consider" -ForegroundColor Red
+    Write-Host "config changes safe to ship until this is fixed -- check the matching" -ForegroundColor Red
+    Write-Host "rule's exclusions against the resource_name/method_name shapes above." -ForegroundColor Red
+    exit 1
+} else {
+    Write-Host "PASS -- all 4 noise-shaped regression events correctly produced zero findings." -ForegroundColor Green
+}
