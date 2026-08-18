@@ -1,0 +1,21 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "iamcredentials.googleapis.com",
+    "methodName": "google.iam.credentials.v1.IAMCredentials.SignJwt",
+    "resourceName": "projects/-/serviceAccounts/audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com",
+    "authenticationInfo": {
+      "principalEmail": "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
+    }
+  },
+  "resource": {
+    "type": "service_account",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-18T05:05:00Z",
+  "insertId": "fixture-impersonation-self-sign-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Fdata_access"
+}

@@ -50,6 +50,7 @@ module "logging" {
   monitored_folder_ids             = var.monitored_folder_ids
   include_data_access_logs         = var.enable_data_access_logs
   include_system_event_logs        = var.enable_system_event_logs
+  include_impersonation_logs       = var.enable_impersonation_logs
   org_id                           = var.org_id
   destination_project_id           = var.project_id
   destination_topic_name           = module.pubsub.main_topic_name

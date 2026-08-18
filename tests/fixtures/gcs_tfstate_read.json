@@ -1,0 +1,21 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "storage.googleapis.com",
+    "methodName": "storage.objects.get",
+    "resourceName": "projects/_/buckets/prj-dg-devops-test-tfstate/objects/audit-platform/state/default.tfstate",
+    "authenticationInfo": {
+      "principalEmail": "premkumar.gunasekaran@docugenieai.com"
+    }
+  },
+  "resource": {
+    "type": "gcs_bucket",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-18T04:30:54Z",
+  "insertId": "fixture-gcs-tfstate-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Fdata_access"
+}

@@ -86,6 +86,30 @@ variable "data_access_audit_services" {
   default     = ["bigquery.googleapis.com", "storage.googleapis.com"]
 }
 
+variable "include_impersonation_logs" {
+  description = <<-EOT
+    Whether to (a) create a google_folder_iam_audit_config enabling
+    ADMIN_READ Data Access logging for iamcredentials.googleapis.com on
+    every monitored folder, and (b) rely on include_data_access_logs
+    already being true to forward them (this flag does NOT add its own
+    sink filter clause -- ADMIN_READ entries land in the same
+    "%2Fdata_access" log category as DATA_READ/DATA_WRITE, so if
+    include_data_access_logs is off, turning this on alone generates the
+    logs but never forwards them). Deliberately separate from
+    data_access_audit_services -- that list intentionally excludes
+    ADMIN_READ everywhere (it's pure Get/List metadata noise for
+    BigQuery/GCS), but for iamcredentials.googleapis.com specifically,
+    ADMIN_READ is the ONLY log type that exists for the calls that matter
+    (GenerateAccessToken/GenerateIdToken/SignJwt/SignBlob -- the calls
+    behind service account impersonation, a classic privilege-escalation
+    and lateral-movement technique). config/rules.yaml's
+    service_account_impersonation rule is the only rule that matches
+    these.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "project_sink_enabled" {
   description = <<-EOT
     Whether to create a project-scoped sink for destination_project_id's

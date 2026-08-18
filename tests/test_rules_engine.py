@@ -21,6 +21,8 @@ RULE_IDS = [
     "policy_denied_access_attempt",
     "bulk_data_export_or_download",
     "system_event_occurred",
+    "iam_custom_role_modified",
+    "service_account_impersonation",
 ]
 
 
@@ -313,6 +315,8 @@ def test_evaluate_rules_never_raises_on_bad_rule_evaluation(tmp_path, monkeypatc
         ("bigquery_extract_job.json", "bulk_data_export_or_download"),
         ("gcs_object_download.json", "bulk_data_export_or_download"),
         ("system_event_preempted.json", "system_event_occurred"),
+        ("iam_custom_role_updated.json", "iam_custom_role_modified"),
+        ("impersonation_suspicious.json", "service_account_impersonation"),
     ],
 )
 def test_shipped_rule_matches_its_fixture(load_fixture, fixture_name, expected_rule_id) -> None:
@@ -423,6 +427,74 @@ def test_system_event_does_not_flood_unclassified_admin_activity(load_fixture) -
     matched_ids = {f.rule_id for f in findings}
     assert "unclassified_admin_activity" not in matched_ids
     assert matched_ids == {"system_event_occurred"}
+
+
+def test_bulk_data_export_excludes_function_source_bucket_read(load_fixture) -> None:
+    """The gcf-admin-robot service agent reads this platform's own deploy
+    artifact bucket on every Cloud Function build -- confirmed live in
+    production the moment bulk_data_export_or_download went active.
+    Routine tooling noise, not a real download.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("gcs_function_source_read.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
+
+
+def test_bulk_data_export_excludes_tfstate_bucket_read(load_fixture) -> None:
+    """Terraform reads its own remote state bucket on every single
+    plan/apply -- confirmed live. Scoped to the BUCKET, not a specific
+    principal, since different people can run Terraform.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("gcs_tfstate_read.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
+
+
+def test_iam_custom_role_modified_does_not_duplicate_resource_created_or_deleted(load_fixture) -> None:
+    """CreateRole/DeleteRole would otherwise also match resource_created/
+    resource_deleted's generic insert/delete regex -- excluded there so
+    this dedicated rule's more specific IAM framing is the only one that
+    fires.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("iam_custom_role_updated.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert matched_ids == {"iam_custom_role_modified"}
+    assert "unclassified_admin_activity" not in matched_ids
+
+
+def test_impersonation_excludes_platforms_own_self_signing(load_fixture) -> None:
+    """THE critical exclusion: this platform's own keyless auth flow makes
+    the runtime SA sign a JWT for itself on every single Gmail send.
+    Without this exclusion, every alert email sent would trigger an alert
+    about itself.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("impersonation_self_sign_jwt.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
+
+
+def test_impersonation_still_fires_for_an_unrelated_service_account(load_fixture) -> None:
+    """The self-noise exclusion is scoped to the TARGET service account
+    (this platform's own two identities), not a blanket exemption --
+    impersonation of any other service account must stay fully alertable.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("impersonation_suspicious.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert matched_ids == {"service_account_impersonation"}
+
+
+def test_resource_deleted_excludes_security_command_center_framework_housekeeping(load_fixture) -> None:
+    """Security Command Center's own internal service agent
+    (gcp-sa-csc-hpsa) periodically recreates its built-in compliance
+    framework deployment -- confirmed live, 5 identical occurrences, no
+    human/customer principal involved. Matched by domain suffix since the
+    local part is project-number-prefixed and varies per project.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("scc_delete_framework_deployment.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
 
 
 def test_resource_created_excludes_cloud_build_create_build(load_fixture) -> None:
@@ -545,6 +617,8 @@ def test_every_shipped_rule_id_is_covered_by_the_parametrized_test() -> None:
         "policy_denied_access_attempt",
         "bulk_data_export_or_download",
         "system_event_occurred",
+        "iam_custom_role_modified",
+        "service_account_impersonation",
     }
     assert covered == set(RULE_IDS)
     assert {rule.id for rule in engine._RULES} == set(RULE_IDS)
@@ -717,5 +791,5 @@ def test_console_url_template_unknown_placeholder(tmp_path) -> None:
 
 def test_real_config_rules_yaml_loads_without_raising() -> None:
     rules = engine.load_rules()
-    assert len(rules) == 15
+    assert len(rules) == 17
     assert {rule.id for rule in rules} == set(RULE_IDS)

@@ -1,11 +1,26 @@
 # Publishes one synthetic audit-log event per shipped rule in
 # config/rules.yaml (covering create, modify, a delete, a Workload
-# Identity Federation caller, a new-project creation, and a billing
-# change), so you can confirm all twelve rules -- and all five email
-# templates -- actually fire against the live deployed pipeline, not
-# just the one rule (iam_policy_change) the original smoke test covered.
+# Identity Federation caller, a new-project creation, a billing change,
+# a denied attempt, Data Access egress, a System Event, an IAM custom
+# role change, and service account impersonation), so you can confirm
+# all sixteen rules -- and all five email templates -- actually fire
+# against the live deployed pipeline, not just the one rule
+# (iam_policy_change) the original smoke test covered.
 # resource_created/resource_deleted (rules 11-12) don't get a dedicated
 # event -- they're exercised incidentally via overlap on events 4, 7, 8.
+#
+# Events 11-16 (the Policy Denied/Data Access/System Event rules) set
+# `logName` explicitly in the payload, since those rules match on it --
+# events 1-10 omit it entirely (a missing raw.logName is a non-match for
+# every rule's `not: contains %2Fpolicy/%2Fdata_access/%2Fsystem_event`
+# exclusion, so they're correctly treated as Admin Activity). Because
+# this script injects directly into Pub/Sub, downstream of the log
+# sink/audit-config entirely, events 11-16 exercise the RULE MATCHING
+# and email/Gemini pipeline regardless of whether
+# enable_data_access_logs/enable_system_event_logs/
+# enable_impersonation_logs are actually turned on in Terraform -- this
+# script can't tell you whether that plumbing itself is live, only
+# whether the rules fire correctly once an event of that shape arrives.
 #
 # Uses the Pub/Sub REST API directly (not `gcloud pubsub topics publish
 # --message=...`) -- the CLI approach was proven unreliable earlier in this
@@ -16,7 +31,7 @@
 # Nothing here creates, deletes, or modifies any real GCP resource --
 # every event is synthetic, injected directly into the Pub/Sub topic the
 # real org-wide log sink would otherwise feed. It DOES cause real emails to
-# be sent and (for the four ai_analysis: true rules) real Vertex AI/Gemini
+# be sent and (for the ai_analysis: true rules) real Vertex AI/Gemini
 # calls, so it's not entirely free or silent -- hence the confirmation
 # prompt below.
 
@@ -28,7 +43,7 @@ $DelayBetweenEventsSeconds = 5
 
 Write-Host "Project: $Project"
 Write-Host "Topic:   $Topic"
-Write-Host "This publishes 10 synthetic events (matching all 10 rules, several with"
+Write-Host "This publishes 16 synthetic events (matching all 16 rules, several with"
 Write-Host "intentional overlap) and will trigger real emails and some real Gemini calls."
 Write-Host ""
 $Confirmation = Read-Host "Type 'test' to continue"
@@ -232,26 +247,144 @@ Publish-AuditEvent -Name "MODIFY: UpdateProjectBillingInfo (expect: billing_acco
     timestamp = New-Timestamp
     insertId  = New-InsertId "test-billing-changed"
 }
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 11. DENIED -- IAM blocks an attempted SetIamPolicy ---------------------
+Publish-AuditEvent -Name "DENIED: SetIamPolicy blocked (expect: policy_denied_access_attempt, MEDIUM)" -Payload @{
+    protoPayload = @{
+        methodName          = "SetIamPolicy"
+        resourceName        = "projects/$Project"
+        status              = @{ code = 7; message = "PERMISSION_DENIED" }
+        authenticationInfo  = @{ principalEmail = "test-denied@example.com" }
+        authorizationInfo   = @(@{ permission = "resourcemanager.projects.setIamPolicy"; granted = $false })
+        requestMetadata     = @{ callerIp = "203.0.113.230" }
+    }
+    resource  = @{ type = "project"; labels = @{ project_id = $Project } }
+    severity  = "ERROR"
+    timestamp = New-Timestamp
+    insertId  = New-InsertId "test-policy-denied"
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fpolicy"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 12. DATA ACCESS -- BigQuery EXTRACT job (bulk export) ------------------
+# Requires enable_data_access_logs = true for the real pipeline, but this
+# script injects past the sink -- fires regardless (see header comment).
+Publish-AuditEvent -Name "DATA ACCESS: BigQuery EXTRACT job (expect: bulk_data_export_or_download, HIGH, +Gemini)" -Payload @{
+    protoPayload = @{
+        methodName          = "google.cloud.bigquery.v2.JobService.InsertJob"
+        resourceName        = "projects/$Project/jobs/test-extract-job-001"
+        authenticationInfo  = @{ principalEmail = "test-export@example.com" }
+        requestMetadata     = @{ callerIp = "203.0.113.240" }
+        metadata            = @{ jobChange = @{ job = @{ jobConfig = @{ type = "EXTRACT" } } } }
+    }
+    resource  = @{ type = "bigquery_dataset"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = New-InsertId "test-bq-extract"
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 13. DATA ACCESS -- GCS object download ---------------------------------
+Publish-AuditEvent -Name "DATA ACCESS: GCS object download (expect: bulk_data_export_or_download, HIGH, +Gemini)" -Payload @{
+    protoPayload = @{
+        methodName          = "storage.objects.get"
+        resourceName        = "projects/_/buckets/test-sensitive-bucket/objects/report.csv"
+        authenticationInfo  = @{ principalEmail = "test-download@example.com" }
+        requestMetadata     = @{ callerIp = "203.0.113.250" }
+    }
+    resource  = @{ type = "gcs_bucket"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = New-InsertId "test-gcs-download"
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 14. SYSTEM EVENT -- VM preempted ---------------------------------------
+# Requires enable_system_event_logs = true for the real pipeline; see
+# header comment on why this script fires regardless.
+Publish-AuditEvent -Name "SYSTEM EVENT: VM preempted (expect: system_event_occurred, LOW)" -Payload @{
+    protoPayload = @{
+        methodName          = "compute.instances.preempted"
+        resourceName        = "projects/$Project/zones/asia-south1-a/instances/test-spot-vm"
+        authenticationInfo  = @{}
+    }
+    resource  = @{ type = "gce_instance"; labels = @{ project_id = $Project } }
+    severity  = "INFO"
+    timestamp = New-Timestamp
+    insertId  = New-InsertId "test-system-event"
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fsystem_event"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 15. MODIFY -- custom IAM role definition changed -----------------------
+Publish-AuditEvent -Name "MODIFY: UpdateRole (expect: iam_custom_role_modified, HIGH, +Gemini)" -Payload @{
+    protoPayload = @{
+        methodName          = "google.iam.admin.v1.UpdateRole"
+        resourceName        = "projects/$Project/roles/testCustomRole"
+        authenticationInfo  = @{ principalEmail = "test-role@example.com" }
+        requestMetadata     = @{ callerIp = "203.0.113.99" }
+        request             = @{ role = @{ includedPermissions = @("resourcemanager.projects.setIamPolicy") } }
+    }
+    resource  = @{ type = "iam_role"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = New-InsertId "test-update-role"
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 16. DATA ACCESS -- service account impersonation -----------------------
+# Uses a made-up target SA (test-target-sa@...), NOT this platform's own
+# two real service accounts -- those are deliberately excluded by
+# service_account_impersonation's self-noise exclusion (see
+# config/rules.yaml rule 17's comment), so using them here would test the
+# wrong thing (a rule that correctly does NOT fire).
+Publish-AuditEvent -Name "DATA ACCESS: GenerateAccessToken impersonation (expect: service_account_impersonation, HIGH, +Gemini)" -Payload @{
+    protoPayload = @{
+        methodName          = "google.iam.credentials.v1.IAMCredentials.GenerateAccessToken"
+        resourceName        = "projects/-/serviceAccounts/test-target-sa@$Project.iam.gserviceaccount.com"
+        authenticationInfo  = @{ principalEmail = "test-impersonator@example.com" }
+        requestMetadata     = @{ callerIp = "203.0.113.19" }
+    }
+    resource  = @{ type = "service_account"; labels = @{ project_id = $Project } }
+    severity  = "NOTICE"
+    timestamp = New-Timestamp
+    insertId  = New-InsertId "test-impersonation"
+    logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+}
 
 Write-Host ""
-Write-Host "All 10 events published. Wait ~60s (6 events also call Gemini, which"
+Write-Host "All 16 events published. Wait ~60s (10 findings also call Gemini, which"
 Write-Host "adds latency), then check:"
 Write-Host ""
 Write-Host "  gcloud functions logs read process-audit-log-gmail-alerts ``"
-Write-Host "    --project=$Project --region=asia-south1 --gen2 --limit=250"
+Write-Host "    --project=$Project --region=asia-south1 --gen2 --limit=350"
 Write-Host ""
-Write-Host "Expect 10x 'findings_evaluated' and 15x 'gmail_alert_sent' total --"
+Write-Host "Expect 16x 'findings_evaluated' and 21x 'gmail_alert_sent' total --"
 Write-Host "several events match more than one rule by design (see rule 7's"
-Write-Host "comment in config/rules.yaml for why). 6 findings get an AI"
-Write-Host "Analysis section (org_policy_modified, public_iam_grant,"
-Write-Host "audit_config_changed, federated_identity_action, project_created,"
-Write-Host "billing_account_changed). resource_created/resource_deleted"
-Write-Host "(rules 11-12, HIGH) also fire for events 4, 7, and 8."
+Write-Host "comment in config/rules.yaml for why). 10 findings get an AI"
+Write-Host "Analysis section: the original 6 (org_policy_modified,"
+Write-Host "public_iam_grant, audit_config_changed, federated_identity_action,"
+Write-Host "project_created, billing_account_changed) plus 4 new ones"
+Write-Host "(bulk_data_export_or_download fires on both events 12 and 13,"
+Write-Host "iam_custom_role_modified on event 15, service_account_impersonation"
+Write-Host "on event 16). Events 11-16 are each designed to match exactly one"
+Write-Host "rule apiece -- no overlap, unlike some of events 1-10."
+Write-Host "resource_created/resource_deleted (rules 11-12, HIGH) also fire for"
+Write-Host "events 4, 7, and 8."
 Write-Host ""
-Write-Host "This run also exercises all 5 email templates:"
-Write-Host "  A (Executive Dark)      -- project_created, resource_created, resource_deleted"
+Write-Host "This run also exercises all 5 email templates (see"
+Write-Host "src/email_template.py's _select_template -- explicit rule-id overrides"
+Write-Host "win; everything else falls through by severity: CRITICAL->D, HIGH->A,"
+Write-Host "else->C):"
+Write-Host "  A (Executive Dark)      -- project_created, resource_created, resource_deleted,"
+Write-Host "                             bulk_data_export_or_download, iam_custom_role_modified,"
+Write-Host "                             service_account_impersonation (HIGH fallback)"
 Write-Host "  B (Security Operations) -- iam_policy_change, org_policy_modified,"
 Write-Host "                             audit_config_changed, federated_identity_action"
-Write-Host "  C (Clean Enterprise)    -- unclassified_admin_activity"
+Write-Host "  C (Clean Enterprise)    -- unclassified_admin_activity,"
+Write-Host "                             policy_denied_access_attempt, system_event_occurred"
 Write-Host "  D (Executive Summary)   -- public_iam_grant, billing_account_changed"
 Write-Host "  E (Engineer Detail)     -- firewall_open_to_internet, service_account_key_created"

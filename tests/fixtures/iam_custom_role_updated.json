@@ -1,0 +1,30 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "iam.googleapis.com",
+    "methodName": "google.iam.admin.v1.UpdateRole",
+    "resourceName": "projects/prj-dg-devops-test/roles/customEditorPlus",
+    "authenticationInfo": {
+      "principalEmail": "heidi@example.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.88",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    },
+    "request": {
+      "role": {
+        "includedPermissions": ["resourcemanager.projects.setIamPolicy"]
+      }
+    }
+  },
+  "resource": {
+    "type": "iam_role",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-18T05:00:00Z",
+  "insertId": "fixture-iam-custom-role-updated-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

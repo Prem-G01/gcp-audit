@@ -523,6 +523,16 @@ rules:
             op: contains
             value: "OrgPolicy"
         - not:
+            field: method_name
+            op: contains
+            # UpdateRole doesn't contain insert/create/delete, so it isn't
+            # caught by the two regex exclusions above -- without this,
+            # it would duplicate a MEDIUM alert here alongside rule 16's
+            # (iam_custom_role_modified) HIGH one on every occurrence.
+            # CreateRole/DeleteRole are already excluded above (they DO
+            # match the insert/create and delete regexes respectively).
+            value: "UpdateRole"
+        - not:
             all_of:
               # This platform's own Terraform-driven deploys call
               # FunctionService.UpdateFunction on this very function every
@@ -759,10 +769,11 @@ rules:
       Requested Change: raw.protoPayload.request
 
   # 11. Any resource created (VM, disk, network, bucket, dataset, topic,
-  #     ...), org-wide. Excludes CreateServiceAccountKey and CreateProject
-  #     -- those already have their own dedicated, more detailed HIGH
-  #     rules (2 and 9) with Gemini analysis; this rule firing too would
-  #     just be a second, more generic email for the exact same event.
+  #     ...), org-wide. Excludes CreateServiceAccountKey, CreateProject,
+  #     and CreateRole -- those already have their own dedicated, more
+  #     detailed HIGH rules (2, 9, and 16) with Gemini analysis; this rule
+  #     firing too would just be a second, more generic email for the
+  #     exact same event.
   - id: resource_created
     title: "Resource created"
     description: >
@@ -791,6 +802,14 @@ rules:
         - not:
             field: method_name
             op: contains
+            # Custom IAM role creation has its own dedicated rule (16,
+            # iam_custom_role_modified) -- silently expanding a role's
+            # permissions is a different kind of event than "a VM/bucket
+            # now exists", worth its own framing and fields.
+            value: "CreateRole"
+        - not:
+            field: method_name
+            op: contains
             # Cloud Build kicks one of these off for every deploy this repo's
             # own scripts/CI trigger (gcloud builds submit, Cloud Functions
             # v2's own build-on-deploy) -- routine CI/CD activity, not a
@@ -811,6 +830,26 @@ rules:
             # in the first place. Confirmed live -- see the screenshot that
             # prompted this exclusion.
             value: "ReachabilityService.CreateConnectivityTest"
+        - not:
+            all_of:
+              # Proactive, paired with resource_deleted's
+              # DeleteFrameworkDeployment exclusion -- Security Command
+              # Center's delete-then-recreate housekeeping on its built-in
+              # compliance framework almost certainly has a matching
+              # Create call from the same service agent. Not yet directly
+              # confirmed live the way the Delete side was, but the same
+              # reasoning applies (Google-internal service agent, no
+              # human/customer principal) and waiting for a second live
+              # screenshot to fix the same noise source twice isn't worth
+              # it. If this turns out to be wrong (no such event exists),
+              # it's simply a no-op exclusion, same as the several other
+              # defensive ones in this file.
+              - field: method_name
+                op: contains
+                value: "CreateFrameworkDeployment"
+              - field: principal_email
+                op: ends_with
+                value: "@gcp-sa-csc-hpsa.iam.gserviceaccount.com"
         - not:
             field: raw.logName
             op: contains
@@ -857,6 +896,8 @@ rules:
 
   # 12. Any resource deleted, org-wide. Unlike creation, deletion is
   #     often not reversible -- data loss risk, not just cost/abuse risk.
+  #     Excludes DeleteRole -- rule 16 (iam_custom_role_modified) covers it
+  #     with IAM-specific framing instead.
   - id: resource_deleted
     title: "Resource deleted"
     description: >
@@ -872,6 +913,27 @@ rules:
         - field: method_name
           op: regex
           value: "(?i)delete"
+        - not:
+            all_of:
+              # Security Command Center's own internal service agent
+              # periodically recreates its built-in compliance framework
+              # deployment (delete-then-create housekeeping) -- confirmed
+              # live, 5 identical occurrences, no human/customer principal
+              # involved. Matched by DOMAIN SUFFIX, not a full email --
+              # the local part is project-number-prefixed
+              # ("service-project-<NUM>@..."), varying per project under
+              # the monitored folders, so an exact-equals check would only
+              # ever match one specific project.
+              - field: method_name
+                op: contains
+                value: "DeleteFrameworkDeployment"
+              - field: principal_email
+                op: ends_with
+                value: "@gcp-sa-csc-hpsa.iam.gserviceaccount.com"
+        - not:
+            field: method_name
+            op: contains
+            value: "DeleteRole"
         - not:
             field: raw.logName
             op: contains
@@ -972,7 +1034,16 @@ rules:
   #         protoPayload.metadata.jobChange.job.jobConfig.type.
   #       - A GCS object download (storage.objects.get) by any principal
   #         OTHER than this platform's own two service accounts (self-
-  #         noise -- e.g. this function reading its own deployed source).
+  #         noise -- e.g. this function reading its own deployed source),
+  #         AND not a read of this platform's own infrastructure buckets
+  #         (function source, Terraform state) regardless of who's
+  #         reading them -- confirmed live: enabling this rule immediately
+  #         surfaced the gcf-admin-robot service agent reading the
+  #         function-source bucket during a deploy, and the human running
+  #         `terraform plan`/`apply` reading the tfstate bucket (which
+  #         happens on literally every single plan/apply, forever, so
+  #         this needed a resource-scoped exclusion, not a principal-
+  #         scoped one -- different people can run Terraform).
   #     Deliberately NOT covered: plain BigQuery SELECT queries and GCS
   #     reads in general -- see this rule's description for the noise
   #     tradeoff that shaped this choice.
@@ -1019,6 +1090,21 @@ rules:
                     value:
                       - "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
                       - "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
+                - not:
+                    field: resource_name
+                    op: contains
+                    # This platform's own deploy artifact bucket -- the
+                    # gcf-admin-robot service agent reads this on every
+                    # Cloud Function build/deploy. Confirmed live.
+                    value: "prj-dg-devops-test-function-source"
+                - not:
+                    field: resource_name
+                    op: contains
+                    # This platform's own Terraform remote state bucket --
+                    # read on literally every `terraform plan`/`apply`,
+                    # by whoever's running it (so scoped to the bucket,
+                    # not a principal list). Confirmed live.
+                    value: "prj-dg-devops-test-tfstate"
     fields:
       Principal: principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
@@ -1074,6 +1160,126 @@ rules:
       Resource: resource_name
       Project: project_id
       Event Detail: raw.protoPayload.request
+
+  # 16. Custom IAM role definition changed -- distinct from rule 1
+  #     (iam_policy_change, which watches WHO holds a role) and separate
+  #     from resource_created/resource_deleted, which would otherwise
+  #     treat CreateRole/DeleteRole as generic resource lifecycle events
+  #     (excluded from both, see rules 11/12's comments). A role
+  #     DEFINITION change is a different, quieter attack surface: silently
+  #     adding a permission to a custom role that people already hold
+  #     (UpdateRole) grants that permission to everyone with the role,
+  #     without a single SetIamPolicy call or IAM binding change anywhere
+  #     -- iam_policy_change would never see this.
+  - id: iam_custom_role_modified
+    title: "Custom IAM role created, updated, or deleted"
+    description: >
+      A custom IAM role's definition was created, updated, or deleted
+      (google.iam.admin.v1.{Create,Update,Delete}Role). UpdateRole is the
+      one worth the most scrutiny -- it can silently expand what an
+      existing role grants (adding a permission) without ever touching
+      IAM bindings or triggering iam_policy_change, so everyone who
+      already holds that role is immediately, silently more privileged.
+    severity: HIGH
+    ai_analysis: true
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      all_of:
+        - field: method_name
+          op: regex
+          value: "(?i)(CreateRole|UpdateRole|DeleteRole)"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fpolicy"
+        - not:
+            field: raw.logName
+            op: contains
+            # Role definition changes are always Admin Activity, never
+            # Data Access or System Event -- excluded for defense-in-depth
+            # consistency, not a known false-positive risk.
+            value: "cloudaudit.googleapis.com%2Fdata_access"
+        - not:
+            field: raw.logName
+            op: contains
+            value: "cloudaudit.googleapis.com%2Fsystem_event"
+    fields:
+      Principal: principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Event Time (IST): event_timestamp
+      Method: method_name
+      Role: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
+      Requested Role Definition: raw.protoPayload.request
+
+  # 17. Service account impersonation -- GenerateAccessToken/
+  #     GenerateIdToken/SignJwt/SignBlob via iamcredentials.googleapis.com.
+  #     Only reachable when BOTH modules/logging's include_data_access_logs
+  #     AND include_impersonation_logs are true (these entries share the
+  #     Data Access sink-filter category, but need their OWN, narrower
+  #     ADMIN_READ audit config -- data_access_audit_services deliberately
+  #     never enables ADMIN_READ for BigQuery/GCS, since that would be
+  #     pure Get/List metadata noise; iamcredentials is the one service
+  #     where ADMIN_READ is exactly the wanted signal). Classic privilege-
+  #     escalation/lateral-movement technique: a compromised low-privilege
+  #     identity with roles/iam.serviceAccountTokenCreator on a powerful
+  #     SA can act as that SA without ever touching SetIamPolicy, so
+  #     iam_policy_change would never see it.
+  #
+  #     CRITICAL self-noise exclusion: this platform's OWN keyless auth
+  #     flow (see CLAUDE.md -- "IAM Credentials signJwt + JWT-bearer
+  #     grant") makes the runtime SA sign a JWT for ITSELF on every single
+  #     Gmail send, and Terraform's provider impersonates the deploy SA on
+  #     every plan/apply (CLAUDE.md -- "Provider uses
+  #     impersonate_service_account"). Without excluding impersonation
+  #     TARGETING these two known platform SAs, every alert email sent
+  #     would trigger an alert about itself, and every deploy would
+  #     trigger one about itself -- scoped to the target resource (not the
+  #     caller), so impersonation of any OTHER service account by anyone,
+  #     including these two SAs themselves, stays fully alertable.
+  - id: service_account_impersonation
+    title: "Service account impersonated"
+    description: >
+      A caller generated a short-lived credential (access token, ID
+      token, or signed JWT/blob) for a service account other than this
+      platform's own two known identities. Every other rule in this file
+      already excludes this log category alongside Policy Denied/System
+      Event; this and bulk_data_export_or_download are the only two rules
+      that match "%2Fdata_access" entries.
+    severity: HIGH
+    ai_analysis: true
+    console_url_template: >-
+      https://console.cloud.google.com/logs/query;query=protoPayload.resourceName%3D%22{resource_name}%22?project={project_id}
+    match:
+      all_of:
+        - field: raw.logName
+          op: contains
+          value: "cloudaudit.googleapis.com%2Fdata_access"
+        - field: method_name
+          op: regex
+          value: "(?i)(GenerateAccessToken|GenerateIdToken|SignJwt|SignBlob)"
+        - not:
+            field: resource_name
+            op: contains
+            value: "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
+        - not:
+            field: resource_name
+            op: contains
+            value: "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
+    fields:
+      Principal (Impersonator): principal_email
+      Principal Subject: raw.protoPayload.authenticationInfo.principalSubject
+      Impersonation/Delegation Chain: raw.protoPayload.authenticationInfo.serviceAccountDelegationInfo
+      Event Time (IST): event_timestamp
+      Method: method_name
+      Target Service Account: resource_name
+      Project: project_id
+      Caller IP: request_metadata.caller_ip
+      User Agent: request_metadata.user_agent
 
   # -----------------------------------------------------------------------
   # TEMPLATE -- copy this, fill it in, and add it to the list above. This

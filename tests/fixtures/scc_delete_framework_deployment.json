@@ -1,0 +1,21 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "cloudsecuritycompliance.googleapis.com",
+    "methodName": "google.cloud.cloudsecuritycompliance.v1main.Deployment.DeleteFrameworkDeployment",
+    "resourceName": "projects/308428832378/locations/global/frameworkDeployments/d-builtin-security-essentials-project-308428832378",
+    "authenticationInfo": {
+      "principalEmail": "service-project-308428832378@gcp-sa-csc-hpsa.iam.gserviceaccount.com"
+    }
+  },
+  "resource": {
+    "type": "audited_resource",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-18T06:00:00Z",
+  "insertId": "fixture-scc-delete-framework-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Factivity"
+}

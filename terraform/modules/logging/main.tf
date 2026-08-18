@@ -38,6 +38,13 @@ locals {
     for pair in setproduct(var.monitored_folder_ids, var.data_access_audit_services) :
     "${pair[0]}/${pair[1]}" => { folder = pair[0], service = pair[1] }
   } : {}
+
+  # Folders needing the iamcredentials.googleapis.com ADMIN_READ audit
+  # config -- only when include_impersonation_logs = true. Kept as its
+  # own resource (below), not folded into data_access_audit_pairs, since
+  # it's a different log type (ADMIN_READ, not DATA_READ/DATA_WRITE) for
+  # a service deliberately excluded from data_access_audit_services.
+  impersonation_audit_folders = var.include_impersonation_logs ? toset(var.monitored_folder_ids) : toset([])
 }
 
 # Turns on Data Access (DATA_READ + DATA_WRITE) log GENERATION for the
@@ -56,6 +63,25 @@ resource "google_folder_iam_audit_config" "data_access" {
   }
   audit_log_config {
     log_type = "DATA_WRITE"
+  }
+}
+
+# Turns on ADMIN_READ log GENERATION for iamcredentials.googleapis.com --
+# the calls behind service account impersonation (GenerateAccessToken/
+# GenerateIdToken/SignJwt/SignBlob). A separate, narrower resource from
+# google_folder_iam_audit_config.data_access above because this is a
+# different log type (ADMIN_READ) for a service that's intentionally NOT
+# in data_access_audit_services (blanket ADMIN_READ on BigQuery/GCS would
+# be pure Get/List metadata noise; iamcredentials is the one service
+# where ADMIN_READ is exactly the signal wanted).
+resource "google_folder_iam_audit_config" "impersonation" {
+  for_each = local.impersonation_audit_folders
+
+  folder  = "folders/${each.value}"
+  service = "iamcredentials.googleapis.com"
+
+  audit_log_config {
+    log_type = "ADMIN_READ"
   }
 }
 
