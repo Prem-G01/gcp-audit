@@ -467,9 +467,25 @@ def test_impersonation_excludes_platforms_own_self_signing(load_fixture) -> None
     """THE critical exclusion: this platform's own keyless auth flow makes
     the runtime SA sign a JWT for itself on every single Gmail send.
     Without this exclusion, every alert email sent would trigger an alert
-    about itself.
+    about itself. Regression test for a real bug: GenerateAccessToken/
+    SignJwt log the target SA in NUMERIC uniqueId form
+    (projects/-/serviceAccounts/<numeric>), not email -- an email-only
+    exclusion (the first version shipped) never matched this fixture's
+    shape and fired a real HIGH alert (with a real Gemini call) on every
+    single Gmail send until caught live in production.
     """
     event = EnrichedEvent.from_log_entry(load_fixture("impersonation_self_sign_jwt.json"))
+    findings = engine.evaluate_rules(event)
+    assert findings == []
+
+
+def test_impersonation_excludes_terraforms_own_deploy_sa_impersonation(load_fixture) -> None:
+    """Same bug, other known self-noise source: Terraform's provider
+    impersonates the deploy SA on every plan/apply, also logged with the
+    target in numeric uniqueId form. Confirmed live -- this fired a real
+    HIGH alert on every terraform apply until fixed.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("impersonation_terraform_deploy_sa.json"))
     findings = engine.evaluate_rules(event)
     assert findings == []
 
@@ -480,6 +496,17 @@ def test_impersonation_still_fires_for_an_unrelated_service_account(load_fixture
     impersonation of any other service account must stay fully alertable.
     """
     event = EnrichedEvent.from_log_entry(load_fixture("impersonation_suspicious.json"))
+    findings = engine.evaluate_rules(event)
+    matched_ids = {f.rule_id for f in findings}
+    assert matched_ids == {"service_account_impersonation"}
+
+
+def test_impersonation_still_fires_for_unrelated_sa_in_numeric_id_form(load_fixture) -> None:
+    """The numeric-uniqueId exclusions added for the two platform SAs must
+    not accidentally over-match -- a DIFFERENT SA's numeric id must stay
+    fully alertable too.
+    """
+    event = EnrichedEvent.from_log_entry(load_fixture("impersonation_suspicious_numeric_id.json"))
     findings = engine.evaluate_rules(event)
     matched_ids = {f.rule_id for f in findings}
     assert matched_ids == {"service_account_impersonation"}

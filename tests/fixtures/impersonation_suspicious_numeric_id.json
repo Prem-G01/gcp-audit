@@ -1,0 +1,25 @@
+{
+  "protoPayload": {
+    "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
+    "serviceName": "iamcredentials.googleapis.com",
+    "methodName": "google.iam.credentials.v1.IAMCredentials.GenerateAccessToken",
+    "resourceName": "projects/-/serviceAccounts/999999999999999999999",
+    "authenticationInfo": {
+      "principalEmail": "low-priv-user@securekloud.com"
+    },
+    "requestMetadata": {
+      "callerIp": "203.0.113.99",
+      "callerSuppliedUserAgent": "google-cloud-sdk"
+    }
+  },
+  "resource": {
+    "type": "service_account",
+    "labels": {
+      "project_id": "prj-dg-devops-test"
+    }
+  },
+  "severity": "NOTICE",
+  "timestamp": "2026-08-18T05:25:00Z",
+  "insertId": "fixture-impersonation-suspicious-numeric-001",
+  "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Fdata_access"
+}

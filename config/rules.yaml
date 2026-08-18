@@ -1241,6 +1241,25 @@ rules:
   #     trigger one about itself -- scoped to the target resource (not the
   #     caller), so impersonation of any OTHER service account by anyone,
   #     including these two SAs themselves, stays fully alertable.
+  #
+  #     BUG FOUND LIVE, FIXED: the first version of this exclusion only
+  #     matched the SA's EMAIL form (resource_name contains "...@...iam.
+  #     gserviceaccount.com"), but GenerateAccessToken/SignJwt calls
+  #     apparently get logged with the target in NUMERIC unique-ID form
+  #     instead (resource_name = "projects/-/serviceAccounts/<numeric-id>")
+  #     depending on how the calling library invoked the API -- both this
+  #     platform's own keyless-auth SignJwt calls and Terraform's own
+  #     impersonation of the deploy SA used the numeric form live, so the
+  #     email-only exclusion never matched and both self-noise sources
+  #     fired real HIGH alerts (with real Gemini calls) on every single
+  #     occurrence until this was caught and fixed. A service account's
+  #     numeric uniqueId doubles as its OAuth 2.0 client ID -- the runtime
+  #     SA's is already documented in this repo's own CLAUDE.md (Gmail
+  #     DWD OAuth client 108550589402351078214); the deploy SA's
+  #     (113755025732014374847) was confirmed live via `gcloud iam
+  #     service-accounts describe ... --format="value(uniqueId)"`. Now
+  #     excluding BOTH forms for both SAs, since either could appear
+  #     depending on the caller.
   - id: service_account_impersonation
     title: "Service account impersonated"
     description: >
@@ -1269,7 +1288,20 @@ rules:
         - not:
             field: resource_name
             op: contains
+            # Runtime SA's numeric uniqueId (== its OAuth client ID, per
+            # CLAUDE.md) -- see the BUG FOUND LIVE comment above.
+            value: "108550589402351078214"
+        - not:
+            field: resource_name
+            op: contains
             value: "tf-apply-audit-platform@prj-dg-devops-test.iam.gserviceaccount.com"
+        - not:
+            field: resource_name
+            op: contains
+            # Deploy SA's numeric uniqueId, confirmed live via `gcloud iam
+            # service-accounts describe`. See the BUG FOUND LIVE comment
+            # above.
+            value: "113755025732014374847"
     fields:
       Principal (Impersonator): principal_email
       Principal Subject: raw.protoPayload.authenticationInfo.principalSubject

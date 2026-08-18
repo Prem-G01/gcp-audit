@@ -2,10 +2,10 @@
   "protoPayload": {
     "@type": "type.googleapis.com/google.cloud.audit.AuditLog",
     "serviceName": "iamcredentials.googleapis.com",
-    "methodName": "google.iam.credentials.v1.IAMCredentials.SignJwt",
-    "resourceName": "projects/-/serviceAccounts/108550589402351078214",
+    "methodName": "google.iam.credentials.v1.IAMCredentials.GenerateAccessToken",
+    "resourceName": "projects/-/serviceAccounts/113755025732014374847",
     "authenticationInfo": {
-      "principalEmail": "audit-platform-sa-prj-dg-devop@prj-dg-devops-test.iam.gserviceaccount.com"
+      "principalEmail": "premkumar.gunasekaran@docugenieai.com"
     }
   },
   "resource": {
@@ -15,7 +15,7 @@
     }
   },
   "severity": "NOTICE",
-  "timestamp": "2026-08-18T05:05:00Z",
-  "insertId": "fixture-impersonation-self-sign-001",
+  "timestamp": "2026-08-18T05:20:59Z",
+  "insertId": "fixture-impersonation-terraform-deploy-001",
   "logName": "projects/prj-dg-devops-test/logs/cloudaudit.googleapis.com%2Fdata_access"
 }
