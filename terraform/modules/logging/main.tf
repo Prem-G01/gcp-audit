@@ -66,22 +66,41 @@ resource "google_folder_iam_audit_config" "data_access" {
   }
 }
 
-# Turns on ADMIN_READ log GENERATION for iamcredentials.googleapis.com --
-# the calls behind service account impersonation (GenerateAccessToken/
-# GenerateIdToken/SignJwt/SignBlob). A separate, narrower resource from
-# google_folder_iam_audit_config.data_access above because this is a
-# different log type (ADMIN_READ) for a service that's intentionally NOT
-# in data_access_audit_services (blanket ADMIN_READ on BigQuery/GCS would
-# be pure Get/List metadata noise; iamcredentials is the one service
-# where ADMIN_READ is exactly the signal wanted).
+# Turns on log GENERATION for the calls behind service account
+# impersonation (GenerateAccessToken/GenerateIdToken/SignJwt/SignBlob) --
+# via iam.googleapis.com, NOT iamcredentials.googleapis.com. Confirmed
+# live: `service = "iamcredentials.googleapis.com"` fails apply with
+# "Error 400: Service iamcredentials.googleapis.com does not exist or
+# does not support service level configuration of Google Cloud audit
+# logging" -- Google's own docs confirm Data Access logging for
+# iamcredentials.googleapis.com can't be enabled independently; it has to
+# be enabled on the parent iam.googleapis.com (or org-wide for all
+# services, which this deliberately avoids). Two log types needed:
+# GenerateAccessToken/SignJwt/SignBlob are ADMIN_READ permission type,
+# GenerateIdToken is DATA_READ.
+#
+# Tradeoff worth knowing: this also turns on Data Access logging for
+# EVERY other iam.googleapis.com call, not just impersonation --
+# GetServiceAccount, ListServiceAccounts, TestIamPermissions, etc. (fired
+# constantly by gcloud/Terraform's own permission checks). Not a false-
+# positive risk -- config/rules.yaml's service_account_impersonation rule
+# only matches the 4 specific methods, and every other rule already
+# excludes the whole "%2Fdata_access" category -- but it does mean more
+# Cloud Function invocations processing events that correctly produce no
+# finding. A separate, narrower resource from
+# google_folder_iam_audit_config.data_access above since it's a different
+# service and log-type combination than that one uses.
 resource "google_folder_iam_audit_config" "impersonation" {
   for_each = local.impersonation_audit_folders
 
   folder  = "folders/${each.value}"
-  service = "iamcredentials.googleapis.com"
+  service = "iam.googleapis.com"
 
   audit_log_config {
     log_type = "ADMIN_READ"
+  }
+  audit_log_config {
+    log_type = "DATA_READ"
   }
 }
 

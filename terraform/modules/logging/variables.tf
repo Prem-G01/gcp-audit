@@ -89,22 +89,28 @@ variable "data_access_audit_services" {
 variable "include_impersonation_logs" {
   description = <<-EOT
     Whether to (a) create a google_folder_iam_audit_config enabling
-    ADMIN_READ Data Access logging for iamcredentials.googleapis.com on
+    ADMIN_READ + DATA_READ Data Access logging for iam.googleapis.com
+    (NOT iamcredentials.googleapis.com -- confirmed live, Google doesn't
+    allow independently configuring that service; Data Access logging for
+    it has to be enabled on the parent iam.googleapis.com instead) on
     every monitored folder, and (b) rely on include_data_access_logs
     already being true to forward them (this flag does NOT add its own
-    sink filter clause -- ADMIN_READ entries land in the same
-    "%2Fdata_access" log category as DATA_READ/DATA_WRITE, so if
-    include_data_access_logs is off, turning this on alone generates the
-    logs but never forwards them). Deliberately separate from
-    data_access_audit_services -- that list intentionally excludes
-    ADMIN_READ everywhere (it's pure Get/List metadata noise for
-    BigQuery/GCS), but for iamcredentials.googleapis.com specifically,
-    ADMIN_READ is the ONLY log type that exists for the calls that matter
-    (GenerateAccessToken/GenerateIdToken/SignJwt/SignBlob -- the calls
-    behind service account impersonation, a classic privilege-escalation
-    and lateral-movement technique). config/rules.yaml's
-    service_account_impersonation rule is the only rule that matches
-    these.
+    sink filter clause -- these entries land in the same "%2Fdata_access"
+    log category as DATA_READ/DATA_WRITE, so if include_data_access_logs
+    is off, turning this on alone generates the logs but never forwards
+    them). Deliberately separate from data_access_audit_services -- that
+    list intentionally excludes ADMIN_READ everywhere (pure Get/List
+    metadata noise for BigQuery/GCS), but for the impersonation calls that
+    matter (GenerateAccessToken/SignJwt/SignBlob are ADMIN_READ,
+    GenerateIdToken is DATA_READ -- the calls behind service account
+    impersonation, a classic privilege-escalation and lateral-movement
+    technique), both log types are needed. Turning this on also generates
+    Data Access logs for every OTHER iam.googleapis.com call
+    (GetServiceAccount, ListServiceAccounts, TestIamPermissions, etc. --
+    fired constantly by gcloud/Terraform's own permission checks) --
+    config/rules.yaml's service_account_impersonation rule only matches
+    the 4 impersonation-specific methods, so this isn't a false-positive
+    risk, but it does mean more Cloud Function invocations overall.
   EOT
   type        = bool
   default     = false

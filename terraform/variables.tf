@@ -96,12 +96,15 @@ variable "enable_system_event_logs" {
 variable "enable_impersonation_logs" {
   description = <<-EOT
     Whether to monitor service account impersonation
-    (GenerateAccessToken/GenerateIdToken/SignJwt/SignBlob via
-    iamcredentials.googleapis.com) -- a classic privilege-escalation and
+    (GenerateAccessToken/GenerateIdToken/SignJwt/SignBlob -- logged under
+    serviceName iamcredentials.googleapis.com, but audit-configured via
+    iam.googleapis.com, since Google doesn't allow independently
+    configuring iamcredentials.googleapis.com -- see
+    modules/logging/main.tf) -- a classic privilege-escalation and
     lateral-movement technique that's otherwise invisible to this
     platform even with enable_data_access_logs on (BigQuery/GCS Data
-    Access logging doesn't cover this service or its ADMIN_READ log
-    type). REQUIRES enable_data_access_logs = true as well -- these
+    Access logging doesn't cover this service or its ADMIN_READ/DATA_READ
+    log types). REQUIRES enable_data_access_logs = true as well -- these
     entries land in the same "%2Fdata_access" sink-filter category, so
     this flag alone only makes GCP generate the logs; it doesn't add a
     forwarding rule of its own. Needs the same
