@@ -107,7 +107,7 @@ def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
         )
         return
 
-    if is_rule_suppressed_for_project(finding.rule_id, event.project_id):
+    if is_rule_suppressed_for_project(finding.rule_id, event.project_id, event.asset_ancestors):
         # Same shape as the mute check above, but permanent and config-driven
         # (config/project_rules.yaml) rather than self-service/time-limited --
         # a distinct delivery_status ("suppressed") so BigQuery can tell the

@@ -1,24 +1,40 @@
-# Permanent, per-project rule silencing -- a hand-edited alternative to the
-# "Mute this alert" email button (which is self-service and time-limited via
-# Firestore, see src/muting.py). Entries here never expire on their own.
+# Permanent rule silencing, per-project or per-folder -- a hand-edited
+# alternative to the "Mute this alert" email button (which is self-service
+# and time-limited via Firestore, see src/muting.py). Entries here never
+# expire on their own.
 #
 # Schema:
+#   folders:
+#     <folder_id>:                # bare numeric folder ID, e.g. "89141185434"
+#       <rule_id>: false          # silences this rule for every project under
+#                                  # this folder -- including ones created later
 #   projects:
 #     <project_id>:
-#       <rule_id>: false   # silences this rule for this project, permanently
-#       <rule_id>: true    # explicit alert -- same as leaving it unlisted
+#       <rule_id>: false          # silences this rule for this one project
+#       <rule_id>: true           # explicit alert -- overrides a folder-level
+#                                  # false for just this project
 #
-# Default is always "alert" -- a project not listed here, or a rule not
-# listed under a project that IS here, still fires normally. Only an
-# explicit `false` silences it. This means a new rule you add later, or a
-# project you haven't configured yet, is never silently muted by accident.
+# Precedence: an explicit entry under `projects` for a given project+rule
+# (true OR false) always wins outright. Only when the project has no
+# explicit entry does the folder-level setting (from the event's Cloud
+# Asset Inventory ancestor folders) apply.
+#
+# Default is always "alert" -- a project/folder not listed here, or a rule
+# not listed under one that IS here, still fires normally. Only an explicit
+# `false` silences it. This means a new rule you add later, a project you
+# haven't configured yet, or a brand-new project inside a listed folder, is
+# never silently muted by accident.
 #
 # rule_id values are the exact `id` fields from config/rules.yaml.
 #
 # Example (uncomment and edit):
+# folders:
+#   "89141185434":
+#     service_account_key_created: false
 # projects:
 #   prj-example-project:
 #     service_account_key_created: false
 
 version: 1
+folders: {}
 projects: {}

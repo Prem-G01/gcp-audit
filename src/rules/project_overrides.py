@@ -1,16 +1,28 @@
-"""Permanent, hand-edited per-project rule suppression.
+"""Permanent, hand-edited per-project (and per-folder) rule suppression.
 
 config/project_rules.yaml lets an operator permanently silence a specific
-rule for a specific project (`project -> rule_id -> false`) without editing
+rule for a specific project, or for an entire folder (`rule -> false`
+under `projects.<project_id>` or `folders.<folder_id>`), without editing
 config/rules.yaml itself. This is deliberately a different mechanism from
 src/muting.py's Firestore-backed "Mute this alert" button: that one is
 self-service and time-limited; this one is a version-controlled file the
 operator edits by hand and that never expires on its own.
 
-Default is always "not suppressed" -- an unlisted project, an unlisted
-rule, or an explicit `true` all mean the alert fires normally. Only an
-explicit `false` silences it, so a new rule or a project nobody has
-configured yet never goes silent by accident.
+Default is always "not suppressed" -- an unlisted project/folder, an
+unlisted rule, or an explicit `true` all mean the alert fires normally.
+Only an explicit `false` silences it, so a new rule or a project/folder
+nobody has configured yet never goes silent by accident.
+
+Folder membership comes from EnrichedEvent.asset_ancestors -- already
+populated by the existing Cloud Asset Inventory enrichment
+(src/enrichment/asset_inventory.py), no separate lookup here. That means
+folder suppression is only as reliable as that enrichment: if it fails or
+hasn't indexed a brand-new project yet, asset_ancestors is empty and
+folder suppression simply doesn't apply for that event -- failing open
+(alert fires), same as every other degrade-gracefully boundary in this
+pipeline. An explicit project-level entry (true or false) always takes
+precedence over any folder-level setting, letting one project opt out of
+(or back into) a folder-wide rule.
 
 Unlike config/rules.yaml (validated strictly, fails loudly at cold start),
 this file is expected to be hand-edited often -- a typo here degrades to
@@ -22,6 +34,7 @@ boundary.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -31,6 +44,8 @@ import yaml
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "project_rules.yaml"
+
+_FOLDER_ANCESTOR_PREFIX = "folders/"
 
 
 @lru_cache(maxsize=8)
@@ -46,21 +61,43 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def is_rule_suppressed_for_project(rule_id: str, project_id: str | None) -> bool:
-    """True only when config/project_rules.yaml explicitly sets this
-    project+rule to false. Absence, an unlisted project, or an explicit
-    true all mean "not suppressed" -- never silent by default. Never raises.
+def _lookup(config: dict[str, Any], section: str, key: str, rule_id: str) -> bool | None:
+    section_map = config.get(section)
+    if not isinstance(section_map, dict):
+        return None
+    entries = section_map.get(key)
+    if not isinstance(entries, dict):
+        return None
+    value = entries.get(rule_id)
+    return value if isinstance(value, bool) else None
+
+
+def _folder_ids(asset_ancestors: Sequence[str]) -> list[str]:
+    return [a[len(_FOLDER_ANCESTOR_PREFIX) :] for a in asset_ancestors if a.startswith(_FOLDER_ANCESTOR_PREFIX)]
+
+
+def is_rule_suppressed_for_project(
+    rule_id: str, project_id: str | None, asset_ancestors: Sequence[str] = ()
+) -> bool:
+    """True when config/project_rules.yaml suppresses this rule for this
+    project, or (absent an explicit project-level entry) for a folder the
+    project belongs to per `asset_ancestors`. Absence, an unlisted
+    project/folder, or an explicit true all mean "not suppressed" -- never
+    silent by default. Never raises.
     """
     if not project_id:
         return False
     config = _load_yaml(CONFIG_PATH)
-    projects = config.get("projects")
-    if not isinstance(projects, dict):
-        return False
-    rules = projects.get(project_id)
-    if not isinstance(rules, dict):
-        return False
-    return rules.get(rule_id) is False
+
+    project_value = _lookup(config, "projects", project_id, rule_id)
+    if project_value is not None:
+        return project_value is False
+
+    for folder_id in _folder_ids(asset_ancestors):
+        if _lookup(config, "folders", folder_id, rule_id) is False:
+            return True
+
+    return False
 
 
 __all__ = ["is_rule_suppressed_for_project"]

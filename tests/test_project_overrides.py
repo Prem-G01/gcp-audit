@@ -6,6 +6,11 @@ from src.rules import project_overrides
 
 PROJECT_RULES_YAML = """
 version: 1
+folders:
+  "111":
+    service_account_key_created: false
+    firewall_open_to_internet: false
+    iam_policy_change: false
 projects:
   prj-example:
     service_account_key_created: false
@@ -67,3 +72,75 @@ def test_not_a_mapping_top_level_degrades_to_not_suppressed(tmp_path, monkeypatc
     monkeypatch.setattr(project_overrides, "CONFIG_PATH", path)
 
     assert project_overrides.is_rule_suppressed_for_project("service_account_key_created", "prj-example") is False
+
+
+# --- Folder-level suppression -----------------------------------------------
+
+
+def test_folder_level_false_suppresses_unlisted_project(config_path) -> None:
+    assert (
+        project_overrides.is_rule_suppressed_for_project(
+            "service_account_key_created", "prj-brand-new", asset_ancestors=["folders/111"]
+        )
+        is True
+    )
+
+
+def test_folder_level_false_suppresses_new_project_covering_the_ask(config_path) -> None:
+    """A project not present anywhere in the config, sitting under a
+    suppressed folder, must still be silenced -- the whole point of the
+    folder tier.
+    """
+    assert (
+        project_overrides.is_rule_suppressed_for_project(
+            "firewall_open_to_internet", "prj-created-tomorrow", asset_ancestors=["folders/111", "organizations/999"]
+        )
+        is True
+    )
+
+
+def test_folder_level_unlisted_rule_is_not_suppressed(config_path) -> None:
+    assert (
+        project_overrides.is_rule_suppressed_for_project(
+            "org_policy_modified", "prj-brand-new", asset_ancestors=["folders/111"]
+        )
+        is False
+    )
+
+
+def test_folder_not_matching_any_ancestor_is_not_suppressed(config_path) -> None:
+    assert (
+        project_overrides.is_rule_suppressed_for_project(
+            "service_account_key_created", "prj-brand-new", asset_ancestors=["folders/222"]
+        )
+        is False
+    )
+
+
+def test_empty_asset_ancestors_is_backward_compatible(config_path) -> None:
+    assert project_overrides.is_rule_suppressed_for_project("service_account_key_created", "prj-brand-new") is False
+
+
+def test_project_level_true_overrides_folder_level_false(config_path) -> None:
+    """iam_policy_change is false at the folder level but true at the
+    project level for prj-example -- project-level must win outright, so
+    this specific project still alerts despite the folder-wide suppression.
+    """
+    assert (
+        project_overrides.is_rule_suppressed_for_project(
+            "iam_policy_change", "prj-example", asset_ancestors=["folders/111"]
+        )
+        is False
+    )
+
+
+def test_folder_level_false_still_applies_to_a_different_project_in_same_folder(config_path) -> None:
+    """The same folder-wide iam_policy_change suppression DOES apply to a
+    different project under that folder with no project-level override.
+    """
+    assert (
+        project_overrides.is_rule_suppressed_for_project(
+            "iam_policy_change", "prj-other-in-same-folder", asset_ancestors=["folders/111"]
+        )
+        is True
+    )

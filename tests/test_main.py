@@ -245,7 +245,7 @@ def test_suppressed_finding_skips_send_but_still_persists(monkeypatch: pytest.Mo
     finding = _finding()
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
-    monkeypatch.setattr(main, "is_rule_suppressed_for_project", lambda rule_id, project_id: True)
+    monkeypatch.setattr(main, "is_rule_suppressed_for_project", lambda rule_id, project_id, asset_ancestors=(): True)
 
     fake_client = _FakeGmailClient()
     monkeypatch.setattr(main, "get_client", lambda: fake_client)
@@ -270,7 +270,7 @@ def test_suppressed_finding_never_reaches_gemini(monkeypatch: pytest.MonkeyPatch
     finding = _finding(rule_id="org_policy_modified")
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
-    monkeypatch.setattr(main, "is_rule_suppressed_for_project", lambda rule_id, project_id: True)
+    monkeypatch.setattr(main, "is_rule_suppressed_for_project", lambda rule_id, project_id, asset_ancestors=(): True)
 
     def boom_if_called(rule_id: str) -> bool:
         raise AssertionError("requires_ai_analysis must not be called for a suppressed finding")
@@ -280,16 +280,18 @@ def test_suppressed_finding_never_reaches_gemini(monkeypatch: pytest.MonkeyPatch
     main.process_audit_log(_cloud_event({"insertId": "log-1"}))  # must not raise
 
 
-def test_suppression_check_receives_rule_id_and_project_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    event = EnrichedEvent(raw_log_id="log-1", project_id="prj-target")
+def test_suppression_check_receives_rule_id_project_id_and_ancestors(monkeypatch: pytest.MonkeyPatch) -> None:
+    event = EnrichedEvent(
+        raw_log_id="log-1", project_id="prj-target", asset_ancestors=["folders/111", "organizations/999"]
+    )
     finding = _finding(rule_id="resource_created")
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
 
     seen_args = []
 
-    def fake_is_suppressed(rule_id: str, project_id: str | None) -> bool:
-        seen_args.append((rule_id, project_id))
+    def fake_is_suppressed(rule_id: str, project_id: str | None, asset_ancestors=()) -> bool:
+        seen_args.append((rule_id, project_id, list(asset_ancestors)))
         return False
 
     monkeypatch.setattr(main, "is_rule_suppressed_for_project", fake_is_suppressed)
@@ -299,7 +301,7 @@ def test_suppression_check_receives_rule_id_and_project_id(monkeypatch: pytest.M
 
     main.process_audit_log(_cloud_event({"insertId": "log-1"}))
 
-    assert seen_args == [("resource_created", "prj-target")]
+    assert seen_args == [("resource_created", "prj-target", ["folders/111", "organizations/999"])]
 
 
 def test_service_account_principal_routes_to_sa_notification_list(monkeypatch: pytest.MonkeyPatch) -> None:
