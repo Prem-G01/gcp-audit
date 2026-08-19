@@ -45,24 +45,21 @@ recipients:
     - premkumar.gunasekaran@securekloud.com
     - udayakrishna.duraisamy@securekloud.com
     - kalpana.babu@securekloud.com
-    - cloudsupport@securekloud.com
   HIGH:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
     - udayakrishna.duraisamy@securekloud.com
     - kalpana.babu@securekloud.com
-    - cloudsupport@securekloud.com
   MEDIUM:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
     - udayakrishna.duraisamy@securekloud.com
     - kalpana.babu@securekloud.com
-    - cloudsupport@securekloud.com
   LOW:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
     - udayakrishna.duraisamy@securekloud.com
-    - cloudsupport@securekloud.com
+    
   INFO:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
@@ -73,3 +70,12 @@ recipients:
   default:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
+
+# Any alert whose Principal is a service account (*.iam.gserviceaccount.com,
+# not a human user) routes here instead of the severity-based `recipients`
+# above -- overrides severity entirely for SA-triggered findings. Add your
+# minimal contact(s) here. Empty list = feature off (falls through to
+# normal severity routing, same as before this key existed).
+service_account_notification_recipients:
+  - premkumar.gunasekaran@docugenieai.com
+  - udayakrishna.duraisamy@securekloud.com

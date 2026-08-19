@@ -1,0 +1,24 @@
+# Permanent, per-project rule silencing -- a hand-edited alternative to the
+# "Mute this alert" email button (which is self-service and time-limited via
+# Firestore, see src/muting.py). Entries here never expire on their own.
+#
+# Schema:
+#   projects:
+#     <project_id>:
+#       <rule_id>: false   # silences this rule for this project, permanently
+#       <rule_id>: true    # explicit alert -- same as leaving it unlisted
+#
+# Default is always "alert" -- a project not listed here, or a rule not
+# listed under a project that IS here, still fires normally. Only an
+# explicit `false` silences it. This means a new rule you add later, or a
+# project you haven't configured yet, is never silently muted by accident.
+#
+# rule_id values are the exact `id` fields from config/rules.yaml.
+#
+# Example (uncomment and edit):
+# projects:
+#   prj-example-project:
+#     service_account_key_created: false
+
+version: 1
+projects: {}

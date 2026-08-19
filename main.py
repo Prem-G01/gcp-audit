@@ -26,14 +26,20 @@ from src.enrichment.data_volume import enrich_data_volume
 from src.models import EnrichedEvent, Finding
 from src.persistence.bigquery import Delivery, persist
 from src.rules.engine import evaluate_rules, requires_ai_analysis, write_to_dlq
+from src.rules.project_overrides import is_rule_suppressed_for_project
 from src.senders.gmail_sender import GmailSendError, get_client
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _resolve_recipients(severity: str) -> list[str]:
-    recipients_config = load_routing_config().get("recipients", {})
+def _resolve_recipients(severity: str, principal_email: str | None) -> list[str]:
+    routing_config = load_routing_config()
+    if principal_email and principal_email.endswith(".iam.gserviceaccount.com"):
+        sa_recipients = routing_config.get("service_account_notification_recipients")
+        if sa_recipients:
+            return list(sa_recipients)
+    recipients_config = routing_config.get("recipients", {})
     recipients = recipients_config.get(severity) or recipients_config.get("default") or []
     return list(recipients)
 
@@ -101,10 +107,28 @@ def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
         )
         return
 
+    if is_rule_suppressed_for_project(finding.rule_id, event.project_id):
+        # Same shape as the mute check above, but permanent and config-driven
+        # (config/project_rules.yaml) rather than self-service/time-limited --
+        # a distinct delivery_status ("suppressed") so BigQuery can tell the
+        # two apart. Checked before Gemini for the same reason muting is.
+        logger.info("alert_suppressed_by_project_rule", extra=log_context)
+        persist(
+            finding,
+            event,
+            Delivery(
+                recipients=[],
+                gmail_message_id=None,
+                delivery_status="suppressed",
+                delivery_error=None,
+            ),
+        )
+        return
+
     if requires_ai_analysis(finding.rule_id):
         finding = analyze(finding, event)
 
-    recipients = _resolve_recipients(finding.severity)
+    recipients = _resolve_recipients(finding.severity, finding.principal_email)
     subject, html_body, text_body = render_alert(
         rule_id=finding.rule_id,
         severity=finding.severity,
