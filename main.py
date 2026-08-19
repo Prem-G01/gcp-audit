@@ -22,6 +22,7 @@ from src import muting
 from src.analysis.gemini import analyze
 from src.email_template import load_routing_config, render_alert
 from src.enrichment.asset_inventory import enrich
+from src.enrichment.data_volume import enrich_data_volume
 from src.models import EnrichedEvent, Finding
 from src.persistence.bigquery import Delivery, persist
 from src.rules.engine import evaluate_rules, requires_ai_analysis, write_to_dlq
@@ -173,11 +174,12 @@ def process_audit_log(cloud_event: CloudEvent) -> None:
         logger.error("payload_decode_failed", extra={"error": str(exc)})
         return
 
-    # enrich() and evaluate_rules() are both guaranteed not to raise under
-    # normal operation (constraint 6 / the rules engine's own per-rule
-    # guard); if either does, it's an unforeseen bug and should propagate so
-    # Pub/Sub retries.
+    # enrich(), enrich_data_volume(), and evaluate_rules() are all guaranteed
+    # not to raise under normal operation (constraint 6 / the rules engine's
+    # own per-rule guard); if any does, it's an unforeseen bug and should
+    # propagate so Pub/Sub retries.
     event = enrich(log_entry)
+    event = enrich_data_volume(event)
     findings = evaluate_rules(event)
 
     logger.info(

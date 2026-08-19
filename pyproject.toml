@@ -29,6 +29,7 @@ module = [
     "google.cloud.asset_v1.*",
     "google.cloud.bigquery.*",
     "google.cloud.pubsub_v1.*",
+    "google.cloud.storage.*",
     "vertexai.*",
 ]
 ignore_missing_imports = true

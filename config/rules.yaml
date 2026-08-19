@@ -1116,6 +1116,12 @@ rules:
       Caller IP: request_metadata.caller_ip
       User Agent: request_metadata.user_agent
       Data Access Detail: raw.protoPayload.metadata
+      # GCS: current object size (a proxy, not bytes actually transferred --
+      # audit logs never record that). BigQuery: the EXTRACT job's real
+      # processed-bytes stat. See src/enrichment/data_volume.py. Absent
+      # (field omitted from the email) when the lookup fails/degrades --
+      # never a fabricated placeholder.
+      "Data Size (GCS: object size proxy / BigQuery: processed bytes)": data_size_display
 
   # 15. System Event catch-all -- the mirror of unclassified_admin_activity
   #     for the System Event log category, only reachable when

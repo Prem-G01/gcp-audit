@@ -67,6 +67,8 @@ class EnrichedEvent:
     asset_labels: dict[str, str] = field(default_factory=dict)
     asset_ancestors: list[str] = field(default_factory=list)
     enrichment_ok: bool = True
+    data_size_bytes: int | None = None
+    data_size_display: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod

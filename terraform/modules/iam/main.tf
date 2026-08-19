@@ -42,3 +42,23 @@ resource "google_project_iam_member" "vertex_ai_user" {
   role    = "roles/aiplatform.user"
   member  = "serviceAccount:${var.runtime_service_account_email}"
 }
+
+# src/enrichment/data_volume.py: current-object-size lookup for
+# bulk_data_export_or_download's GCS download path. This role is already
+# minimal (storage.objects.get/.list only) -- no narrower predefined role
+# separates metadata-read from content-read in GCS.
+resource "google_project_iam_member" "storage_object_viewer" {
+  project = var.project_id
+  role    = "roles/storage.objectViewer"
+  member  = "serviceAccount:${var.runtime_service_account_email}"
+}
+
+# src/enrichment/data_volume.py: jobs.get lookup for
+# bulk_data_export_or_download's BigQuery EXTRACT path (reading a completed
+# job's processed-bytes statistic, not creating jobs). Project-level is the
+# minimum grain BigQuery jobs.get offers.
+resource "google_project_iam_member" "bigquery_job_user" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${var.runtime_service_account_email}"
+}

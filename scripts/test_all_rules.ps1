@@ -52,12 +52,31 @@
 #
 # Requires: bq CLI, already authenticated (same gcloud session used for
 # the Pub/Sub publish calls below).
+#
+# Events 21-22 are OPTIONAL and off by default -- they validate the real
+# data-size lookup in src/enrichment/data_volume.py (GCS object size /
+# BigQuery job bytes) against an actual existing resource, rather than just
+# confirming bulk_data_export_or_download matches (which events 12-13
+# already do with fake resource names that can never resolve). Fill in
+# $RealGcsObjectResourceName / $RealBqExtractJobResourceName below to
+# enable them; unlike the automated regression check, their result can only
+# be confirmed by reading the resulting email, not by querying BigQuery.
 
 $ErrorActionPreference = "Stop"
 
 $Project = "prj-dg-devops-test"
 $Topic = "audit-platform-logs"
 $DelayBetweenEventsSeconds = 5
+
+# OPTIONAL -- fill these in with a REAL resource (not the excluded
+# tfstate/function-source buckets) to exercise the actual data-size lookup
+# in src/enrichment/data_volume.py (events 21-22 below), rather than just
+# confirming the rule matches. Requires terraform apply to have already
+# granted roles/storage.objectViewer / roles/bigquery.jobUser to the
+# runtime SA. Leave blank to skip both -- everything else in this script
+# still runs.
+$RealGcsObjectResourceName = ""   # e.g. "projects/_/buckets/some-real-bucket/objects/some-real-object.csv"
+$RealBqExtractJobResourceName = "" # e.g. "projects/prj-dg-devops-test/jobs/bqjob_r123_abc456"
 
 Write-Host "Project: $Project"
 Write-Host "Topic:   $Topic"
@@ -448,8 +467,56 @@ Publish-AuditEvent -Name "REGRESSION CHECK: GCS read of the function-source buck
     logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
 }
 
+# --- 21. OPTIONAL: real GCS object download -- validates the actual data-
+# size LOOKUP (src/enrichment/data_volume.py's Storage API call), not just
+# that the rule matches like event 13 already does. Cannot be auto-checked
+# via BigQuery like events 17-20 -- data_size_display only ever reaches the
+# rendered email, it's not a persisted column -- so this requires checking
+# the resulting email's "Data Size" field by eye.
+if ($RealGcsObjectResourceName) {
+    Publish-AuditEvent -Name "REAL DATA SIZE: GCS object download (expect: bulk_data_export_or_download, HIGH -- check email's Data Size field)" -Payload @{
+        protoPayload = @{
+            methodName          = "storage.objects.get"
+            resourceName        = $RealGcsObjectResourceName
+            authenticationInfo  = @{ principalEmail = "test-real-download@example.com" }
+            requestMetadata     = @{ callerIp = "203.0.113.251" }
+        }
+        resource  = @{ type = "gcs_bucket"; labels = @{ project_id = $Project } }
+        severity  = "NOTICE"
+        timestamp = New-Timestamp
+        insertId  = New-InsertId "test-real-gcs-size"
+        logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+    }
+} else {
+    Write-Host "Skipping event 21 (real GCS data-size lookup) -- set `$RealGcsObjectResourceName at the top of this script to exercise it."
+}
+Start-Sleep -Seconds $DelayBetweenEventsSeconds
+
+# --- 22. OPTIONAL: real BigQuery EXTRACT job -- validates the actual
+# jobs.get byte-count lookup against a job that really ran, same caveat as
+# event 21 (email-only, not BigQuery-checkable).
+if ($RealBqExtractJobResourceName) {
+    Publish-AuditEvent -Name "REAL DATA SIZE: BigQuery EXTRACT job (expect: bulk_data_export_or_download, HIGH -- check email's Data Size field)" -Payload @{
+        protoPayload = @{
+            methodName          = "google.cloud.bigquery.v2.JobService.InsertJob"
+            resourceName        = $RealBqExtractJobResourceName
+            authenticationInfo  = @{ principalEmail = "test-real-export@example.com" }
+            requestMetadata     = @{ callerIp = "203.0.113.252" }
+            metadata            = @{ jobChange = @{ job = @{ jobConfig = @{ type = "EXTRACT" } } } }
+        }
+        resource  = @{ type = "bigquery_dataset"; labels = @{ project_id = $Project } }
+        severity  = "NOTICE"
+        timestamp = New-Timestamp
+        insertId  = New-InsertId "test-real-bq-size"
+        logName   = "projects/$Project/logs/cloudaudit.googleapis.com%2Fdata_access"
+    }
+} else {
+    Write-Host "Skipping event 22 (real BigQuery data-size lookup) -- set `$RealBqExtractJobResourceName at the top of this script to exercise it."
+}
+
 Write-Host ""
 Write-Host "All 20 events published (16 rule-coverage + 4 regression checks)."
+Write-Host "Plus any of events 21-22 (real data-size lookups) you enabled above."
 Write-Host ""
 Write-Host "To inspect the full run manually, check:"
 Write-Host ""
@@ -483,6 +550,13 @@ Write-Host "                             policy_denied_access_attempt, system_ev
 Write-Host "  D (Executive Summary)   -- public_iam_grant, billing_account_changed"
 Write-Host "  E (Engineer Detail)     -- firewall_open_to_internet, service_account_key_created"
 Write-Host ""
+if ($RealGcsObjectResourceName -or $RealBqExtractJobResourceName) {
+    Write-Host "You enabled one or more real data-size lookups (events 21-22). Check the"
+    Write-Host "resulting email(s)' Data Size field by eye -- this can't be verified via"
+    Write-Host "BigQuery like the regression checks below, since data_size_display is"
+    Write-Host "only ever rendered into the email, never persisted as its own column."
+    Write-Host ""
+}
 
 # --- Automated regression check -------------------------------------------
 # This is the actual point of events 17-20: don't just print instructions
