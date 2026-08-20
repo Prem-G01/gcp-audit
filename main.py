@@ -33,13 +33,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _resolve_recipients(severity: str, principal_email: str | None) -> list[str]:
-    routing_config = load_routing_config()
-    if principal_email and principal_email.endswith(".iam.gserviceaccount.com"):
-        sa_recipients = routing_config.get("service_account_notification_recipients")
-        if sa_recipients:
-            return list(sa_recipients)
-    recipients_config = routing_config.get("recipients", {})
+def _resolve_recipients(severity: str) -> list[str]:
+    recipients_config = load_routing_config().get("recipients", {})
     recipients = recipients_config.get(severity) or recipients_config.get("default") or []
     return list(recipients)
 
@@ -125,10 +120,30 @@ def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
         )
         return
 
+    if finding.principal_email and finding.principal_email.endswith(".iam.gserviceaccount.com"):
+        # Blanket, unconditional: every service-account-triggered finding,
+        # in every project, is suppressed entirely -- no email to anyone.
+        # Still persisted, same as the checks above, with its own
+        # delivery_status so BigQuery can tell this apart from a Firestore
+        # mute or a config/project_rules.yaml suppression. Checked before
+        # Gemini for the same reason those are.
+        logger.info("alert_suppressed_service_account", extra=log_context)
+        persist(
+            finding,
+            event,
+            Delivery(
+                recipients=[],
+                gmail_message_id=None,
+                delivery_status="suppressed_service_account",
+                delivery_error=None,
+            ),
+        )
+        return
+
     if requires_ai_analysis(finding.rule_id):
         finding = analyze(finding, event)
 
-    recipients = _resolve_recipients(finding.severity, finding.principal_email)
+    recipients = _resolve_recipients(finding.severity)
     subject, html_body, text_body = render_alert(
         rule_id=finding.rule_id,
         severity=finding.severity,
