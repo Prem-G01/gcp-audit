@@ -37,4 +37,14 @@
 
 version: 1
 folders: {}
-projects: {}
+projects:
+  # restapi@prj-dg-ahfl-apps-prod.iam.gserviceaccount.com downloads files
+  # from gs://ahfl-processing-data every 15-40s as part of its normal
+  # operation -- each download fired its own bulk_data_export_or_download
+  # email (the rule has no volume threshold), which exhausted Gmail's
+  # sending limit and blocked delivery of every other alert. Silenced here
+  # instead of relying on blanket SA suppression, so other SA-triggered
+  # rules (service_account_impersonation, iam_policy_change, etc.) in this
+  # or any other project still alert normally.
+  prj-dg-ahfl-apps-prod:
+    bulk_data_export_or_download: false
