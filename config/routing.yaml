@@ -71,6 +71,11 @@ recipients:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
 
-# NOTE: alerts where the Principal is a service account (*.iam.gserviceaccount.com)
-# are suppressed entirely before reaching recipient routing at all -- see
-# main.py's _handle_finding. There is no recipient list to configure here for them.
+# Any alert whose Principal is a service account (*.iam.gserviceaccount.com,
+# not a human user) routes here instead of the severity-based `recipients`
+# above -- overrides severity entirely for SA-triggered findings. Add your
+# minimal contact(s) here. Empty list = feature off (falls through to
+# normal severity routing, same as before this key existed).
+service_account_notification_recipients:
+  - premkumar.gunasekaran@docugenieai.com
+  - udayakrishna.duraisamy@securekloud.com
