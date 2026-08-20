@@ -45,21 +45,24 @@ recipients:
     - premkumar.gunasekaran@securekloud.com
     - udayakrishna.duraisamy@securekloud.com
     - kalpana.babu@securekloud.com
+    - cloudsupport@securekloud.com
   HIGH:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
     - udayakrishna.duraisamy@securekloud.com
     - kalpana.babu@securekloud.com
+    - cloudsupport@securekloud.com
   MEDIUM:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
     - udayakrishna.duraisamy@securekloud.com
     - kalpana.babu@securekloud.com
+    - cloudsupport@securekloud.com
   LOW:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
     - udayakrishna.duraisamy@securekloud.com
-    
+    - cloudsupport@securekloud.com
   INFO:
     - premkumar.gunasekaran@docugenieai.com
     - premkumar.gunasekaran@securekloud.com
