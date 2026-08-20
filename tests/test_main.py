@@ -304,47 +304,60 @@ def test_suppression_check_receives_rule_id_project_id_and_ancestors(monkeypatch
     assert seen_args == [("resource_created", "prj-target", ["folders/111", "organizations/999"])]
 
 
-def test_service_account_principal_is_fully_suppressed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_service_account_principal_routes_to_sa_notification_list(monkeypatch: pytest.MonkeyPatch) -> None:
     event = EnrichedEvent(raw_log_id="log-1")
     finding = _finding(principal_email="runtime-sa@prj.iam.gserviceaccount.com")
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(
+        main,
+        "load_routing_config",
+        lambda: {
+            "recipients": {"HIGH": ["normal-team@example.com"]},
+            "service_account_notification_recipients": ["sa-notify@example.com"],
+        },
+    )
 
     fake_client = _FakeGmailClient()
     monkeypatch.setattr(main, "get_client", lambda: fake_client)
 
-    persisted = []
-    monkeypatch.setattr(main, "persist", lambda f, e, delivery: persisted.append(delivery))
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert fake_client.calls[0]["to"] == ["sa-notify@example.com"]
+
+
+def test_service_account_principal_falls_back_when_sa_list_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    event = EnrichedEvent(raw_log_id="log-1")
+    finding = _finding(principal_email="runtime-sa@prj.iam.gserviceaccount.com")
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(
+        main,
+        "load_routing_config",
+        lambda: {"recipients": {"HIGH": ["normal-team@example.com"]}, "service_account_notification_recipients": []},
+    )
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
 
     main.process_audit_log(_cloud_event({"insertId": "log-1"}))
 
-    assert fake_client.calls == []  # suppressed -- never even attempted to send
-    assert len(persisted) == 1
-    assert persisted[0]["delivery_status"] == "suppressed_service_account"
-    assert persisted[0]["recipients"] == []
-    assert persisted[0]["gmail_message_id"] is None
+    assert fake_client.calls[0]["to"] == ["normal-team@example.com"]
 
 
-def test_service_account_suppression_never_reaches_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
-    event = EnrichedEvent(raw_log_id="log-1")
-    finding = _finding(rule_id="org_policy_modified", principal_email="runtime-sa@prj.iam.gserviceaccount.com")
-    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
-    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
-
-    def boom_if_called(rule_id: str) -> bool:
-        raise AssertionError("requires_ai_analysis must not be called for an SA-suppressed finding")
-
-    monkeypatch.setattr(main, "requires_ai_analysis", boom_if_called)
-
-    main.process_audit_log(_cloud_event({"insertId": "log-1"}))  # must not raise
-
-
-def test_human_principal_is_not_suppressed_and_uses_normal_severity_routing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_human_principal_uses_normal_severity_routing(monkeypatch: pytest.MonkeyPatch) -> None:
     event = EnrichedEvent(raw_log_id="log-1")
     finding = _finding(principal_email="a-human@example.com")
     monkeypatch.setattr(main, "enrich", lambda log_entry: event)
     monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
-    monkeypatch.setattr(main, "load_routing_config", lambda: {"recipients": {"HIGH": ["normal-team@example.com"]}})
+    monkeypatch.setattr(
+        main,
+        "load_routing_config",
+        lambda: {
+            "recipients": {"HIGH": ["normal-team@example.com"]},
+            "service_account_notification_recipients": ["sa-notify@example.com"],
+        },
+    )
 
     fake_client = _FakeGmailClient()
     monkeypatch.setattr(main, "get_client", lambda: fake_client)
