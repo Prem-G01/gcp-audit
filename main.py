@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve_recipients(severity: str, principal_email: str | None) -> list[str]:
     routing_config = load_routing_config()
-    if principal_email and principal_email.endswith(".iam.gserviceaccount.com"):
+    if principal_email and principal_email.endswith(".gserviceaccount.com"):
         sa_recipients = routing_config.get("service_account_notification_recipients")
         if sa_recipients:
             return list(sa_recipients)
@@ -127,7 +127,7 @@ def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
 
     if (
         finding.principal_email
-        and finding.principal_email.endswith(".iam.gserviceaccount.com")
+        and finding.principal_email.endswith(".gserviceaccount.com")
         and is_rule_muted_for_service_accounts(finding.rule_id)
     ):
         # Org-wide, rule-specific mute for service-account-triggered

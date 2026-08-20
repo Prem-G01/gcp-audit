@@ -390,6 +390,33 @@ def test_sa_muted_rule_is_fully_suppressed_for_sa_principal(monkeypatch: pytest.
     assert persisted[0]["recipients"] == []
 
 
+def test_sa_muted_rule_suppresses_default_compute_engine_sa(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default Compute Engine SA uses the legacy
+    PROJECT_NUMBER-compute@developer.gserviceaccount.com format, not
+    *.iam.gserviceaccount.com -- must still be detected as a service
+    account, not treated as a human.
+    """
+    event = EnrichedEvent(raw_log_id="log-1")
+    finding = _finding(
+        rule_id="bulk_data_export_or_download",
+        principal_email="334357168339-compute@developer.gserviceaccount.com",
+    )
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(main, "is_rule_muted_for_service_accounts", lambda rule_id: True)
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
+
+    persisted = []
+    monkeypatch.setattr(main, "persist", lambda f, e, delivery: persisted.append(delivery))
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert fake_client.calls == []
+    assert persisted[0]["delivery_status"] == "suppressed_service_account"
+
+
 def test_sa_muted_rule_never_reaches_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
     event = EnrichedEvent(raw_log_id="log-1")
     finding = _finding(rule_id="bulk_data_export_or_download", principal_email="restapi@prj.iam.gserviceaccount.com")
