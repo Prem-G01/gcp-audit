@@ -15,6 +15,8 @@ projects:
   prj-example:
     service_account_key_created: false
     iam_policy_change: true
+service_account_muted_rules:
+  - bulk_data_export_or_download
 """
 
 
@@ -144,3 +146,27 @@ def test_folder_level_false_still_applies_to_a_different_project_in_same_folder(
         )
         is True
     )
+
+
+# --- Service-account-only rule muting (org-wide) ----------------------------
+
+
+def test_listed_rule_is_muted_for_service_accounts(config_path) -> None:
+    assert project_overrides.is_rule_muted_for_service_accounts("bulk_data_export_or_download") is True
+
+
+def test_unlisted_rule_is_not_muted_for_service_accounts(config_path) -> None:
+    assert project_overrides.is_rule_muted_for_service_accounts("iam_policy_change") is False
+
+
+def test_missing_file_service_account_mute_degrades_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(project_overrides, "CONFIG_PATH", tmp_path / "does-not-exist.yaml")
+    assert project_overrides.is_rule_muted_for_service_accounts("bulk_data_export_or_download") is False
+
+
+def test_service_account_muted_rules_not_a_list_degrades_to_false(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "project_rules.yaml"
+    path.write_text("service_account_muted_rules: not-a-list\n", encoding="utf-8")
+    monkeypatch.setattr(project_overrides, "CONFIG_PATH", path)
+
+    assert project_overrides.is_rule_muted_for_service_accounts("bulk_data_export_or_download") is False

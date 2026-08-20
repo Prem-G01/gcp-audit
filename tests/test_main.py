@@ -367,6 +367,91 @@ def test_human_principal_uses_normal_severity_routing(monkeypatch: pytest.Monkey
     assert fake_client.calls[0]["to"] == ["normal-team@example.com"]
 
 
+def test_sa_muted_rule_is_fully_suppressed_for_sa_principal(monkeypatch: pytest.MonkeyPatch) -> None:
+    event = EnrichedEvent(raw_log_id="log-1")
+    finding = _finding(rule_id="bulk_data_export_or_download", principal_email="restapi@prj.iam.gserviceaccount.com")
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(
+        main, "is_rule_muted_for_service_accounts", lambda rule_id: rule_id == "bulk_data_export_or_download"
+    )
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
+
+    persisted = []
+    monkeypatch.setattr(main, "persist", lambda f, e, delivery: persisted.append(delivery))
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert fake_client.calls == []  # muted -- never even attempted to send
+    assert len(persisted) == 1
+    assert persisted[0]["delivery_status"] == "suppressed_service_account"
+    assert persisted[0]["recipients"] == []
+
+
+def test_sa_muted_rule_never_reaches_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
+    event = EnrichedEvent(raw_log_id="log-1")
+    finding = _finding(rule_id="bulk_data_export_or_download", principal_email="restapi@prj.iam.gserviceaccount.com")
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(main, "is_rule_muted_for_service_accounts", lambda rule_id: True)
+
+    def boom_if_called(rule_id: str) -> bool:
+        raise AssertionError("requires_ai_analysis must not be called for an SA-muted rule")
+
+    monkeypatch.setattr(main, "requires_ai_analysis", boom_if_called)
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))  # must not raise
+
+
+def test_sa_muted_rule_does_not_suppress_human_principal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same rule, muted for SAs, must still alert normally when a
+    human triggers it -- this is the whole point of the mechanism.
+    """
+    event = EnrichedEvent(raw_log_id="log-1")
+    finding = _finding(rule_id="bulk_data_export_or_download", principal_email="a-human@example.com")
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(main, "is_rule_muted_for_service_accounts", lambda rule_id: True)
+    monkeypatch.setattr(main, "load_routing_config", lambda: {"recipients": {"HIGH": ["normal-team@example.com"]}})
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert fake_client.calls[0]["to"] == ["normal-team@example.com"]
+
+
+def test_sa_principal_on_unmuted_rule_still_routes_to_sa_notification_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An SA triggering a DIFFERENT rule (not in service_account_muted_rules)
+    still falls through to the minimal SA notification list, not suppressed.
+    """
+    event = EnrichedEvent(raw_log_id="log-1")
+    finding = _finding(rule_id="service_account_impersonation", principal_email="restapi@prj.iam.gserviceaccount.com")
+    monkeypatch.setattr(main, "enrich", lambda log_entry: event)
+    monkeypatch.setattr(main, "evaluate_rules", lambda e: [finding])
+    monkeypatch.setattr(
+        main, "is_rule_muted_for_service_accounts", lambda rule_id: rule_id == "bulk_data_export_or_download"
+    )
+    monkeypatch.setattr(
+        main,
+        "load_routing_config",
+        lambda: {
+            "recipients": {"HIGH": ["normal-team@example.com"]},
+            "service_account_notification_recipients": ["sa-notify@example.com"],
+        },
+    )
+
+    fake_client = _FakeGmailClient()
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
+
+    main.process_audit_log(_cloud_event({"insertId": "log-1"}))
+
+    assert fake_client.calls[0]["to"] == ["sa-notify@example.com"]
+
+
 def test_mute_url_helper_builds_link_with_project(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MUTE_SERVICE_URL", "https://mute-web-abc123-uc.a.run.app/")
     url = main._mute_url("resource_created", "prj-dg-devops-test")

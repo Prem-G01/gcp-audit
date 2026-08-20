@@ -26,7 +26,7 @@ from src.enrichment.data_volume import enrich_data_volume
 from src.models import EnrichedEvent, Finding
 from src.persistence.bigquery import Delivery, persist
 from src.rules.engine import evaluate_rules, requires_ai_analysis, write_to_dlq
-from src.rules.project_overrides import is_rule_suppressed_for_project
+from src.rules.project_overrides import is_rule_muted_for_service_accounts, is_rule_suppressed_for_project
 from src.senders.gmail_sender import GmailSendError, get_client
 
 logging.basicConfig(level=logging.INFO)
@@ -120,6 +120,32 @@ def _handle_finding(finding: Finding, event: EnrichedEvent) -> None:
                 recipients=[],
                 gmail_message_id=None,
                 delivery_status="suppressed",
+                delivery_error=None,
+            ),
+        )
+        return
+
+    if (
+        finding.principal_email
+        and finding.principal_email.endswith(".iam.gserviceaccount.com")
+        and is_rule_muted_for_service_accounts(finding.rule_id)
+    ):
+        # Org-wide, rule-specific mute for service-account-triggered
+        # findings only (config/project_rules.yaml's
+        # service_account_muted_rules) -- a human triggering this same
+        # rule still alerts normally, and an SA triggering any OTHER rule
+        # still routes to the minimal SA notification list below. Built
+        # for a high-frequency automated SA source overwhelming a rule
+        # with no volume threshold. Checked before Gemini for the same
+        # reason the checks above are.
+        logger.info("alert_muted_for_service_account", extra=log_context)
+        persist(
+            finding,
+            event,
+            Delivery(
+                recipients=[],
+                gmail_message_id=None,
+                delivery_status="suppressed_service_account",
                 delivery_error=None,
             ),
         )

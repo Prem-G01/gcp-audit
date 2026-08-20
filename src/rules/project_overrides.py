@@ -29,6 +29,18 @@ this file is expected to be hand-edited often -- a typo here degrades to
 "nothing suppressed" rather than taking down the whole pipeline, matching
 this platform's degrade-gracefully contract for every other external-input
 boundary.
+
+A third, independent axis: `service_account_muted_rules` (a plain list of
+rule ids, not a project/folder-keyed map) mutes a rule for EVERY service
+account principal, in every project, while leaving that same rule alerting
+normally when a human triggers it. Built for a specific recurring problem:
+an automated service account driving high-frequency legitimate traffic
+(e.g. an API backend downloading files every few seconds) against a rule
+with no volume threshold can exhaust Gmail's sending limit and block
+delivery of every other alert. This is a coarser, org-wide version of the
+projects:/folders: suppression above -- use it when the noise isn't
+specific to one project, or when you don't yet know which project it'll
+show up in next.
 """
 
 from __future__ import annotations
@@ -100,4 +112,18 @@ def is_rule_suppressed_for_project(
     return False
 
 
-__all__ = ["is_rule_suppressed_for_project"]
+def is_rule_muted_for_service_accounts(rule_id: str) -> bool:
+    """True when config/project_rules.yaml's service_account_muted_rules
+    list contains this rule id. A plain list (not true/false-per-rule) --
+    presence mutes, absence never does, so there's no true/false-meaning
+    inversion to trip over relative to the projects:/folders: sections
+    above. Never raises.
+    """
+    config = _load_yaml(CONFIG_PATH)
+    muted = config.get("service_account_muted_rules")
+    if not isinstance(muted, list):
+        return False
+    return rule_id in muted
+
+
+__all__ = ["is_rule_muted_for_service_accounts", "is_rule_suppressed_for_project"]

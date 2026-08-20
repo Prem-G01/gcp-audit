@@ -34,17 +34,26 @@
 # projects:
 #   prj-example-project:
 #     service_account_key_created: false
+#
+# A fourth key, service_account_muted_rules, is a plain LIST of rule ids
+# (not a project/folder map) -- any rule listed here is muted whenever a
+# service account triggers it, in EVERY project, while still alerting
+# normally when a human triggers that same rule. Use this instead of
+# projects:/folders: when the noisy source isn't tied to one project, or
+# you don't know which project it'll show up in next.
+# service_account_muted_rules:
+#   - bulk_data_export_or_download
 
 version: 1
 folders: {}
-projects:
-  # restapi@prj-dg-ahfl-apps-prod.iam.gserviceaccount.com downloads files
-  # from gs://ahfl-processing-data every 15-40s as part of its normal
-  # operation -- each download fired its own bulk_data_export_or_download
-  # email (the rule has no volume threshold), which exhausted Gmail's
-  # sending limit and blocked delivery of every other alert. Silenced here
-  # instead of relying on blanket SA suppression, so other SA-triggered
-  # rules (service_account_impersonation, iam_policy_change, etc.) in this
-  # or any other project still alert normally.
-  prj-dg-ahfl-apps-prod:
-    bulk_data_export_or_download: false
+projects: {}
+service_account_muted_rules:
+  # Multiple automated SA-driven sources (restapi@prj-dg-ahfl-apps-prod's
+  # every-15-40s file downloads, plus at least one other unidentified
+  # source hitting this same rule) fired their own uncapped email per
+  # event -- no volume threshold exists for this rule -- and exhausted
+  # Gmail's sending limit, blocking delivery of every other alert
+  # org-wide. Muted for every service account rather than one project at
+  # a time; a human triggering a bulk download still alerts normally, and
+  # SA-triggered alerts on every other rule are unaffected.
+  - bulk_data_export_or_download
